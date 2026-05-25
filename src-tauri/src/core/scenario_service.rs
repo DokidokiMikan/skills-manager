@@ -126,9 +126,11 @@ pub fn preview_scenario_sync(
 /// Returns `Some(existing)` when both modes match exactly. A desired
 /// `Symlink` also accepts a recorded `Junction`, because Windows may
 /// satisfy the link intent with a directory junction when symlink
-/// privileges are unavailable. Existing `Copy` remains compatible with
-/// desired `Symlink` for the older copy fallback case (issue #153), so
-/// the hash gate can avoid copying unchanged contents repeatedly.
+/// privileges are unavailable. On non-Windows, existing `Copy` remains
+/// compatible with desired `Symlink` for the older copy fallback case
+/// (issue #153), so the hash gate can avoid copying unchanged contents
+/// repeatedly. On Windows, old copy fallbacks are intentionally treated
+/// as incompatible so they can be upgraded to symlink/junction targets.
 ///
 /// The reverse direction (existing `"symlink"`, desired `Copy`) returns
 /// `None` because the user actively changed the `sync_mode` setting and
@@ -137,14 +139,27 @@ fn skip_check_mode(
     existing_mode: &str,
     desired: sync_engine::SyncMode,
 ) -> Option<sync_engine::SyncMode> {
+    if existing_mode == "copy" && matches!(desired, sync_engine::SyncMode::Symlink) {
+        return copy_fallback_skip_mode_for_symlink();
+    }
+
     match (existing_mode, desired) {
         ("symlink", sync_engine::SyncMode::Symlink) => Some(sync_engine::SyncMode::Symlink),
         ("junction", sync_engine::SyncMode::Junction) => Some(sync_engine::SyncMode::Junction),
         ("junction", sync_engine::SyncMode::Symlink) => Some(sync_engine::SyncMode::Junction),
         ("copy", sync_engine::SyncMode::Copy) => Some(sync_engine::SyncMode::Copy),
-        ("copy", sync_engine::SyncMode::Symlink) => Some(sync_engine::SyncMode::Copy),
         _ => None,
     }
+}
+
+#[cfg(windows)]
+fn copy_fallback_skip_mode_for_symlink() -> Option<sync_engine::SyncMode> {
+    None
+}
+
+#[cfg(not(windows))]
+fn copy_fallback_skip_mode_for_symlink() -> Option<sync_engine::SyncMode> {
+    Some(sync_engine::SyncMode::Copy)
 }
 
 pub fn sync_desired_targets(
@@ -784,6 +799,7 @@ mod sync_desired_targets_tests {
     /// must be skipped. Prior to the fix the mode-equality guard would
     /// reject the skip branch and re-attempt the full recursive copy
     /// every startup.
+    #[cfg(not(windows))]
     #[test]
     fn copy_fallback_target_with_matching_hash_is_skipped() {
         let _lock = central_repo::test_base_dir_lock();
@@ -869,6 +885,101 @@ mod sync_desired_targets_tests {
             !target.join("SKILL.md").exists(),
             "SKILL.md appeared — sync ran instead of skipping"
         );
+
+        central_repo::set_test_base_dir_override(None);
+    }
+
+    /// Windows companion: old Copy fallback records should not stay on
+    /// a copied directory forever. They should be retried once the
+    /// current desired mode is Symlink so the Windows junction fallback
+    /// can replace the directory with a cheap link target.
+    #[cfg(windows)]
+    #[test]
+    fn copy_fallback_target_with_matching_hash_upgrades_to_link_on_windows() {
+        let _lock = central_repo::test_base_dir_lock();
+        let tmp = tempdir().unwrap();
+        let base = tmp.path().join("repo");
+        central_repo::set_test_base_dir_override(Some(base.clone()));
+        fs::create_dir_all(central_repo::skills_dir()).unwrap();
+        let store = SkillStore::new(&base.join("test.db")).unwrap();
+
+        let source = central_repo::skills_dir().join("skill-a");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("SKILL.md"), "real source").unwrap();
+
+        let target = tmp.path().join("agent-skills").join("skill-a");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("MARKER.txt"), "old copy fallback").unwrap();
+
+        let skill = SkillRecord {
+            id: "skill-a".to_string(),
+            name: "skill-a".to_string(),
+            description: None,
+            source_type: "import".to_string(),
+            source_ref: Some(source.to_string_lossy().to_string()),
+            source_ref_resolved: None,
+            source_subpath: None,
+            source_branch: None,
+            source_revision: None,
+            remote_revision: None,
+            central_path: source.to_string_lossy().to_string(),
+            content_hash: Some("h1".to_string()),
+            enabled: true,
+            created_at: 1,
+            updated_at: 1,
+            status: "ok".to_string(),
+            update_status: "local_only".to_string(),
+            last_checked_at: None,
+            last_check_error: None,
+        };
+        store.insert_skill(&skill).unwrap();
+
+        store
+            .insert_target(&SkillTargetRecord {
+                id: "target-1".to_string(),
+                skill_id: "skill-a".to_string(),
+                tool: "claude-code".to_string(),
+                target_path: target.to_string_lossy().to_string(),
+                mode: "copy".to_string(),
+                status: "ok".to_string(),
+                synced_at: Some(1),
+                last_error: None,
+                source_hash: Some("h1".to_string()),
+            })
+            .unwrap();
+
+        let desired = vec![ScenarioSyncTarget {
+            skill_id: "skill-a".to_string(),
+            skill_name: "skill-a".to_string(),
+            tool: "claude-code".to_string(),
+            source: source.clone(),
+            target: target.clone(),
+            mode: sync_engine::SyncMode::Symlink,
+            source_hash: Some("h1".to_string()),
+        }];
+
+        sync_desired_targets(&store, &desired).unwrap();
+
+        assert_eq!(
+            target.canonicalize().unwrap(),
+            source.canonicalize().unwrap()
+        );
+        assert_eq!(
+            fs::read_to_string(target.join("SKILL.md")).unwrap(),
+            "real source"
+        );
+        assert!(
+            !target.join("MARKER.txt").exists(),
+            "old copied directory was not replaced"
+        );
+
+        let target_record = store
+            .get_all_targets()
+            .unwrap()
+            .into_iter()
+            .find(|target| target.skill_id == "skill-a" && target.tool == "claude-code")
+            .unwrap();
+        assert_ne!(target_record.mode, "copy");
 
         central_repo::set_test_base_dir_override(None);
     }
@@ -969,6 +1080,7 @@ mod skip_check_mode_tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn copy_existing_with_symlink_desired_treated_as_copy() {
         // Windows fallback case (issue #153): record says copy because
         // symlink_dir failed previously. We accept that and let the hash
@@ -978,6 +1090,12 @@ mod skip_check_mode_tests {
             skip_check_mode("copy", SyncMode::Symlink),
             Some(SyncMode::Copy)
         ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn copy_existing_with_symlink_desired_retried_for_link_upgrade_on_windows() {
+        assert!(skip_check_mode("copy", SyncMode::Symlink).is_none());
     }
 
     #[test]

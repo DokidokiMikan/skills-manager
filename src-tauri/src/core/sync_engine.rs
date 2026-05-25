@@ -1,6 +1,10 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
+#[cfg(windows)]
+static WINDOWS_PREFER_JUNCTION_FALLBACK: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Refuse to copy when `dst` would land inside `src` (or equal `src`).
 /// Otherwise the recursive copy walks into the freshly-created `dst` and
 /// produces unbounded `<dst>/<dst>/<dst>/...` nesting (issue #61).
@@ -67,6 +71,12 @@ pub fn sync_skill(source: &Path, target: &Path, mode: SyncMode) -> Result<SyncMo
     if is_target_current(source, target, mode, None, None) {
         return Ok(mode);
     }
+    #[cfg(windows)]
+    if matches!(mode, SyncMode::Symlink)
+        && is_target_current(source, target, SyncMode::Junction, None, None)
+    {
+        return Ok(SyncMode::Junction);
+    }
 
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)
@@ -89,10 +99,25 @@ pub fn sync_skill(source: &Path, target: &Path, mode: SyncMode) -> Result<SyncMo
             }
             #[cfg(windows)]
             {
+                if windows_prefers_junction_fallback() {
+                    return create_junction(source, target)
+                        .map(|()| SyncMode::Junction)
+                        .or_else(|junction_err| {
+                            log::warn!(
+                                "cached junction fallback {:?} -> {:?} failed ({junction_err}); falling back to copy",
+                                target,
+                                source
+                            );
+                            let _ = remove_target(target);
+                            copy_dir_recursive(source, target)?;
+                            Ok(SyncMode::Copy)
+                        });
+                }
                 match create_directory_symlink(source, target) {
                     Ok(()) => Ok(SyncMode::Symlink),
                     Err(symlink_err) => match create_junction(source, target) {
                         Ok(()) => {
+                            remember_windows_junction_fallback();
                             log::warn!(
                                 "symlink_dir {:?} -> {:?} failed, using junction fallback: {symlink_err}",
                                 target,
@@ -248,6 +273,25 @@ fn junction_points_to(target: &Path, source: &Path) -> bool {
 
 #[cfg(windows)]
 fn create_junction(source: &Path, target: &Path) -> Result<()> {
+    match create_junction_reparse_point(source, target) {
+        Ok(()) => Ok(()),
+        Err(native_err) => {
+            log::debug!(
+                "native junction creation {:?} -> {:?} failed, trying mklink fallback: {native_err}",
+                target,
+                source
+            );
+            create_junction_with_mklink(source, target).with_context(|| {
+                format!(
+                    "native junction creation failed ({native_err}); mklink fallback also failed"
+                )
+            })
+        }
+    }
+}
+
+#[cfg(windows)]
+fn create_junction_with_mklink(source: &Path, target: &Path) -> Result<()> {
     let source_arg = windows_cmd_path(source);
     let target_arg = windows_cmd_path(target);
     let output = std::process::Command::new("cmd")
@@ -290,6 +334,159 @@ fn create_junction(source: &Path, target: &Path) -> Result<()> {
 #[cfg(windows)]
 fn windows_cmd_path(path: &Path) -> String {
     path.as_os_str().to_string_lossy().replace('/', "\\")
+}
+
+#[cfg(windows)]
+fn create_junction_reparse_point(source: &Path, target: &Path) -> Result<()> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, GENERIC_WRITE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+    use windows_sys::Win32::System::Ioctl::FSCTL_SET_REPARSE_POINT;
+    use windows_sys::Win32::System::SystemServices::IO_REPARSE_TAG_MOUNT_POINT;
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+
+    struct HandleGuard(windows_sys::Win32::Foundation::HANDLE);
+
+    impl Drop for HandleGuard {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = CloseHandle(self.0);
+            }
+        }
+    }
+
+    let source = source
+        .canonicalize()
+        .with_context(|| format!("Failed to canonicalize junction source {:?}", source))?;
+    std::fs::create_dir(target)
+        .with_context(|| format!("Failed to create junction directory {:?}", target))?;
+
+    let result = (|| {
+        let target_wide = wide_null(OsStr::new(&windows_cmd_path(target)));
+        let handle = unsafe {
+            CreateFileW(
+                target_wide.as_ptr(),
+                GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS,
+                std::ptr::null_mut(),
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            return Err(std::io::Error::last_os_error())
+                .with_context(|| format!("Failed to open junction directory {:?}", target));
+        }
+        let _handle = HandleGuard(handle);
+        let buffer = junction_reparse_buffer(&source)?;
+        let mut bytes_returned = 0u32;
+        let ok = unsafe {
+            DeviceIoControl(
+                handle,
+                FSCTL_SET_REPARSE_POINT,
+                buffer.as_ptr() as *const _,
+                buffer.len() as u32,
+                std::ptr::null_mut(),
+                0,
+                &mut bytes_returned,
+                std::ptr::null_mut(),
+            )
+        };
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error()).with_context(|| {
+                format!(
+                    "Failed to set junction reparse point {:?} -> {:?}",
+                    target, source
+                )
+            });
+        }
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_dir(target);
+    }
+
+    fn wide_null(value: &OsStr) -> Vec<u16> {
+        value.encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    fn wide_bytes(value: &str) -> Vec<u8> {
+        OsStr::new(value)
+            .encode_wide()
+            .flat_map(u16::to_le_bytes)
+            .collect()
+    }
+
+    fn junction_reparse_buffer(source: &Path) -> Result<Vec<u8>> {
+        let print_name = junction_print_path(source);
+        let substitute_name = format!(r"\??\{print_name}");
+        let substitute = wide_bytes(&substitute_name);
+        let print = wide_bytes(&print_name);
+
+        let substitute_len =
+            u16::try_from(substitute.len()).context("Junction substitute path is too long")?;
+        let print_offset = substitute_len
+            .checked_add(2)
+            .context("Junction reparse path offset overflow")?;
+        let print_len = u16::try_from(print.len()).context("Junction print path is too long")?;
+
+        let path_buffer_len = substitute.len() + 2 + print.len() + 2;
+        let reparse_data_len = 8usize
+            .checked_add(path_buffer_len)
+            .context("Junction reparse buffer length overflow")?;
+        let reparse_data_len =
+            u16::try_from(reparse_data_len).context("Junction reparse buffer is too large")?;
+
+        let mut buffer = Vec::with_capacity(8 + reparse_data_len as usize);
+        buffer.extend_from_slice(&IO_REPARSE_TAG_MOUNT_POINT.to_le_bytes());
+        buffer.extend_from_slice(&reparse_data_len.to_le_bytes());
+        buffer.extend_from_slice(&0u16.to_le_bytes());
+        buffer.extend_from_slice(&0u16.to_le_bytes());
+        buffer.extend_from_slice(&substitute_len.to_le_bytes());
+        buffer.extend_from_slice(&print_offset.to_le_bytes());
+        buffer.extend_from_slice(&print_len.to_le_bytes());
+        buffer.extend_from_slice(&substitute);
+        buffer.extend_from_slice(&0u16.to_le_bytes());
+        buffer.extend_from_slice(&print);
+        buffer.extend_from_slice(&0u16.to_le_bytes());
+        Ok(buffer)
+    }
+
+    fn junction_print_path(path: &Path) -> String {
+        let normalized = windows_cmd_path(path);
+        if let Some(rest) = normalized.strip_prefix(r"\\?\UNC\") {
+            format!(r"\\{rest}")
+        } else if let Some(rest) = normalized.strip_prefix(r"\\?\") {
+            rest.to_string()
+        } else {
+            normalized
+        }
+    }
+
+    result.with_context(|| {
+        format!(
+            "Failed to create native junction {:?} -> {:?}",
+            target, source
+        )
+    })
+}
+
+#[cfg(windows)]
+fn windows_prefers_junction_fallback() -> bool {
+    use std::sync::atomic::Ordering;
+    WINDOWS_PREFER_JUNCTION_FALLBACK.load(Ordering::Relaxed)
+}
+
+#[cfg(windows)]
+fn remember_windows_junction_fallback() {
+    use std::sync::atomic::Ordering;
+    WINDOWS_PREFER_JUNCTION_FALLBACK.store(true, Ordering::Relaxed);
 }
 
 #[cfg(windows)]
