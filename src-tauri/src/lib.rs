@@ -459,11 +459,14 @@ fn apply_preset_from_tray<R: tauri::Runtime>(
         //               frontend about state changes that didn't occur)
         //   Err(_)    — failure inside the batch
         let result = tauri::async_runtime::spawn_blocking(move || -> Result<bool, String> {
+            let start = Instant::now();
             let _guard = match TRAY_PRESET_APPLY_LOCK.try_lock() {
                 Ok(guard) => guard,
                 Err(_) => {
-                    log::debug!(
-                        "Another preset apply in flight, ignoring tray click for {preset_id_for_task}"
+                    log::info!(
+                        "tray preset apply: preset={} mode={mode:?} skipped=in_flight elapsed={} ms",
+                        preset_id_for_task,
+                        start.elapsed().as_millis()
                     );
                     return Ok(false);
                 }
@@ -474,6 +477,11 @@ fn apply_preset_from_tray<R: tauri::Runtime>(
                 .get_skill_ids_for_scenario(&preset_id_for_task)
                 .map_err(|e| e.to_string())?;
             if skill_ids.is_empty() {
+                log::info!(
+                    "tray preset apply: preset={} mode={mode:?} skipped=empty_skills elapsed={} ms",
+                    preset_id_for_task,
+                    start.elapsed().as_millis()
+                );
                 return Ok(false);
             }
             let tool_keys: Vec<String> =
@@ -485,15 +493,31 @@ fn apply_preset_from_tray<R: tauri::Runtime>(
                     .map(|adapter| adapter.key)
                     .collect();
             if tool_keys.is_empty() {
+                log::info!(
+                    "tray preset apply: preset={} mode={mode:?} skipped=empty_tools skills={} elapsed={} ms",
+                    preset_id_for_task,
+                    skill_ids.len(),
+                    start.elapsed().as_millis()
+                );
                 return Ok(false);
             }
-            core::scenario_service::apply_skills_to_tools(
+            let skill_count = skill_ids.len();
+            let tool_count = tool_keys.len();
+            let result = core::scenario_service::apply_skills_to_tools(
                 &store_for_task,
                 &skill_ids,
                 &tool_keys,
                 mode,
-            )
-            .map_err(|e| e.to_string())?;
+            );
+            log::info!(
+                "tray preset apply: preset={} mode={mode:?} skills={} tools={} elapsed={} ms status={}",
+                preset_id_for_task,
+                skill_count,
+                tool_count,
+                start.elapsed().as_millis(),
+                if result.is_ok() { "ok" } else { "failed" }
+            );
+            result.map_err(|e| e.to_string())?;
             Ok(true)
         })
         .await;

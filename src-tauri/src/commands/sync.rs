@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 use tauri::{AppHandle, State};
 
 use crate::core::{
@@ -49,6 +50,7 @@ pub async fn sync_skill_to_tool(
 ) -> Result<(), AppError> {
     let store = store.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        let start = Instant::now();
         let outcome = (|| -> Result<(), AppError> {
             sync_skill_to_tool_internal(&store, &skill_id, &tool)?;
 
@@ -74,6 +76,13 @@ pub async fn sync_skill_to_tool(
             Ok(())
         })();
         log_sync_outcome(&store, "enable", &skill_id, &tool, outcome.as_ref());
+        log::info!(
+            "sync_skill_to_tool: action=enable skill={} tool={} elapsed={} ms status={}",
+            skill_id,
+            tool,
+            start.elapsed().as_millis(),
+            if outcome.is_ok() { "ok" } else { "failed" }
+        );
         outcome
     })
     .await?;
@@ -92,14 +101,22 @@ pub async fn unsync_skill_from_tool(
 ) -> Result<(), AppError> {
     let store = store.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        let start = Instant::now();
+        let mut matched_targets = 0usize;
+        let mut removed_targets = 0usize;
         let outcome = (|| -> Result<(), AppError> {
             let targets = store
                 .get_targets_for_skill(&skill_id)
                 .map_err(AppError::db)?;
 
             if let Some(target) = targets.iter().find(|t| t.tool == tool) {
+                matched_targets = 1;
                 let target_path = PathBuf::from(&target.target_path);
-                sync_engine::remove_target(&target_path).ok();
+                if let Err(e) = sync_engine::remove_target(&target_path) {
+                    log::warn!("Failed to remove sync target {}: {e}", target_path.display());
+                } else {
+                    removed_targets = 1;
+                }
             }
 
             store
@@ -128,6 +145,15 @@ pub async fn unsync_skill_from_tool(
             Ok(())
         })();
         log_sync_outcome(&store, "disable", &skill_id, &tool, outcome.as_ref());
+        log::info!(
+            "sync_skill_to_tool: action=disable skill={} tool={} elapsed={} ms status={} matched_targets={} fs_removed={}",
+            skill_id,
+            tool,
+            start.elapsed().as_millis(),
+            if outcome.is_ok() { "ok" } else { "failed" },
+            matched_targets,
+            removed_targets
+        );
         outcome
     })
     .await?;
@@ -228,6 +254,8 @@ pub async fn set_skill_tool_toggle(
 ) -> Result<(), AppError> {
     let store = store.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        let start = Instant::now();
+        let mut applied_to_disk = false;
         let skill_ids = store
             .get_skill_ids_for_scenario(&preset_id)
             .map_err(AppError::db)?;
@@ -267,6 +295,7 @@ pub async fn set_skill_tool_toggle(
             .as_deref()
             == Some(preset_id.as_str());
         if is_active {
+            applied_to_disk = true;
             if enabled {
                 sync_skill_to_tool_internal(&store, &skill_id, &tool)?;
             } else {
@@ -283,6 +312,15 @@ pub async fn set_skill_tool_toggle(
             }
         }
 
+        log::info!(
+            "set_skill_tool_toggle: preset={} skill={} tool={} enabled={} active_apply={} elapsed={} ms",
+            preset_id,
+            skill_id,
+            tool,
+            enabled,
+            applied_to_disk,
+            start.elapsed().as_millis()
+        );
         Ok(())
     })
     .await?;

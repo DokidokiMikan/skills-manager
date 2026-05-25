@@ -255,10 +255,18 @@ async fn apply_preset_to_default_impl(
     id: String,
     store: Arc<SkillStore>,
 ) -> Result<(), AppError> {
+    let preset_id_for_log = id.clone();
+    let start = Instant::now();
     let result = tauri::async_runtime::spawn_blocking(move || {
         scenario_service::apply_scenario_to_default(&store, &id)
     })
     .await?;
+    log::info!(
+        "apply_preset_to_default: preset={} elapsed={} ms status={}",
+        preset_id_for_log,
+        start.elapsed().as_millis(),
+        if result.is_ok() { "ok" } else { "failed" }
+    );
     if result.is_ok() {
         refresh_tray_menu_best_effort(&app);
     }
@@ -274,6 +282,7 @@ pub async fn add_skill_to_preset(
 ) -> Result<(), AppError> {
     let store = store.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        let start = Instant::now();
         sync_metadata::with_repo_lock("add skill to scenario", || {
             store.add_skill_to_scenario(&preset_id, &skill_id)?;
             sync_metadata::write_all_from_db_unlocked(&store)
@@ -284,6 +293,12 @@ pub async fn add_skill_to_preset(
         // because in the post-v1.16 model presets are curation labels, not
         // implicit deployment switches. Users apply presets explicitly via
         // PresetBar / the tray, which is where the actual write happens.
+        log::info!(
+            "add_skill_to_preset: preset={} skill={} elapsed={} ms",
+            preset_id,
+            skill_id,
+            start.elapsed().as_millis()
+        );
         Ok(())
     })
     .await?;
@@ -302,6 +317,7 @@ pub async fn remove_skill_from_preset(
 ) -> Result<(), AppError> {
     let store = store.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        let start = Instant::now();
         sync_metadata::with_repo_lock("remove skill from scenario", || {
             store.remove_skill_from_scenario(&preset_id, &skill_id)?;
             sync_metadata::write_all_from_db_unlocked(&store)
@@ -311,6 +327,12 @@ pub async fn remove_skill_from_preset(
         // never wipes on-disk skill targets. To remove a skill from a coding
         // agent the caller goes through PresetBar / the tray (or the explicit
         // per-skill unsync command).
+        log::info!(
+            "remove_skill_from_preset: preset={} skill={} elapsed={} ms",
+            preset_id,
+            skill_id,
+            start.elapsed().as_millis()
+        );
         Ok(())
     })
     .await?;
@@ -416,11 +438,17 @@ pub async fn apply_preset_to_coding_agents(
 ) -> Result<(), AppError> {
     let store = store.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        let start = Instant::now();
         scenario_service::ensure_scenario_exists(&store, &preset_id)?;
         let skill_ids = store
             .get_skill_ids_for_scenario(&preset_id)
             .map_err(AppError::db)?;
         if skill_ids.is_empty() {
+            log::info!(
+                "apply_preset_to_coding_agents: preset={} mode={mode:?} skipped=empty_skills elapsed={} ms",
+                preset_id,
+                start.elapsed().as_millis()
+            );
             return Ok(());
         }
         let tool_keys: Vec<String> = tool_adapters::enabled_installed_adapters(&store)
@@ -429,9 +457,26 @@ pub async fn apply_preset_to_coding_agents(
             .map(|adapter| adapter.key)
             .collect();
         if tool_keys.is_empty() {
+            log::info!(
+                "apply_preset_to_coding_agents: preset={} mode={mode:?} skipped=empty_tools skills={} elapsed={} ms",
+                preset_id,
+                skill_ids.len(),
+                start.elapsed().as_millis()
+            );
             return Ok(());
         }
-        scenario_service::apply_skills_to_tools(&store, &skill_ids, &tool_keys, mode.into())
+        let skill_count = skill_ids.len();
+        let tool_count = tool_keys.len();
+        let result = scenario_service::apply_skills_to_tools(&store, &skill_ids, &tool_keys, mode.into());
+        log::info!(
+            "apply_preset_to_coding_agents: preset={} mode={mode:?} skills={} tools={} elapsed={} ms status={}",
+            preset_id,
+            skill_count,
+            tool_count,
+            start.elapsed().as_millis(),
+            if result.is_ok() { "ok" } else { "failed" }
+        );
+        result
     })
     .await?;
     if result.is_ok() {

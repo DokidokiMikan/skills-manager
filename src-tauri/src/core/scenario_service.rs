@@ -328,18 +328,27 @@ pub fn unsync_obsolete_scenario_targets(
 }
 
 pub fn unsync_scenario_skills(store: &SkillStore, scenario_id: &str) -> Result<(), AppError> {
+    let start = Instant::now();
     let skill_ids = store
         .get_skill_ids_for_scenario(scenario_id)
         .map_err(AppError::db)?;
 
+    let mut target_count = 0usize;
+    let mut removed_count = 0usize;
+    let mut failed_count = 0usize;
     for skill_id in &skill_ids {
         let targets = store.get_targets_for_skill(skill_id).unwrap_or_default();
+        target_count += targets.len();
         for target in &targets {
             let path = PathBuf::from(&target.target_path);
             if let Err(e) = sync_engine::remove_target(&path) {
+                failed_count += 1;
                 log::warn!("Failed to remove sync target {}: {e}", path.display());
+            } else {
+                removed_count += 1;
             }
             if let Err(e) = store.delete_target(skill_id, &target.tool) {
+                failed_count += 1;
                 log::warn!(
                     "Failed to delete target record for skill {skill_id}, tool {}: {e}",
                     target.tool
@@ -348,17 +357,38 @@ pub fn unsync_scenario_skills(store: &SkillStore, scenario_id: &str) -> Result<(
         }
     }
 
+    log::info!(
+        "unsync_scenario_skills: scenario={} skills={} targets={} fs_removed={} failed={} elapsed={} ms",
+        scenario_id,
+        skill_ids.len(),
+        target_count,
+        removed_count,
+        failed_count,
+        start.elapsed().as_millis()
+    );
     Ok(())
 }
 
 pub fn sync_scenario_skills(store: &SkillStore, scenario_id: &str) -> Result<(), AppError> {
+    let start = Instant::now();
     let desired_targets = collect_scenario_sync_targets(store, scenario_id)?;
-    sync_desired_targets(store, &desired_targets)
+    let target_count = desired_targets.len();
+    let result = sync_desired_targets(store, &desired_targets);
+    log::info!(
+        "sync_scenario_skills: scenario={} targets={} elapsed={} ms status={}",
+        scenario_id,
+        target_count,
+        start.elapsed().as_millis(),
+        if result.is_ok() { "ok" } else { "failed" }
+    );
+    result
 }
 
 pub fn apply_scenario_to_default(store: &SkillStore, scenario_id: &str) -> Result<(), AppError> {
+    let start = Instant::now();
     ensure_scenario_exists(store, scenario_id)?;
     let desired_targets = collect_scenario_sync_targets(store, scenario_id)?;
+    let target_count = desired_targets.len();
 
     if let Ok(Some(old_id)) = store.get_active_scenario_id() {
         if old_id != scenario_id {
@@ -369,7 +399,15 @@ pub fn apply_scenario_to_default(store: &SkillStore, scenario_id: &str) -> Resul
     store
         .set_active_scenario(scenario_id)
         .map_err(AppError::db)?;
-    sync_desired_targets(store, &desired_targets)
+    let result = sync_desired_targets(store, &desired_targets);
+    log::info!(
+        "apply_scenario_to_default: scenario={} targets={} elapsed={} ms status={}",
+        scenario_id,
+        target_count,
+        start.elapsed().as_millis(),
+        if result.is_ok() { "ok" } else { "failed" }
+    );
+    result
 }
 
 pub fn sync_skill_to_active_scenario(
@@ -548,6 +586,7 @@ pub fn sync_single_skill_to_tool(
     skill_id: &str,
     tool: &str,
 ) -> Result<(), AppError> {
+    let start = Instant::now();
     let adapter = tool_adapters::find_adapter_with_store(store, tool)
         .ok_or_else(|| AppError::not_found(format!("Unknown tool: {}", tool)))?;
 
@@ -576,7 +615,9 @@ pub fn sync_single_skill_to_tool(
         .join(sync_engine::target_dir_name(&source, &skill.name));
     let configured_mode = store.get_setting("sync_mode").map_err(AppError::db)?;
     let mode = sync_engine::sync_mode_for_tool(tool, configured_mode.as_deref());
+    let fs_start = Instant::now();
     let actual_mode = sync_engine::sync_skill(&source, &target, mode).map_err(AppError::io)?;
+    let fs_elapsed = fs_start.elapsed().as_millis();
 
     let now = chrono::Utc::now().timestamp_millis();
     let target_record = SkillTargetRecord {
@@ -592,6 +633,16 @@ pub fn sync_single_skill_to_tool(
     };
 
     store.insert_target(&target_record).map_err(AppError::db)?;
+    log::info!(
+        "sync_single_skill_to_tool: skill={} ({}) tool={} mode={} fs_elapsed={} ms elapsed={} ms target={}",
+        skill_id,
+        skill.name,
+        tool,
+        actual_mode.as_str(),
+        fs_elapsed,
+        start.elapsed().as_millis(),
+        target.display()
+    );
     Ok(())
 }
 
@@ -621,6 +672,11 @@ pub fn apply_skills_to_tools(
     mode: BatchApplyMode,
 ) -> Result<(), AppError> {
     if skill_ids.is_empty() || tool_keys.is_empty() {
+        log::info!(
+            "apply_skills_to_tools({mode:?}): skipped empty input skills={} tools={}",
+            skill_ids.len(),
+            tool_keys.len()
+        );
         return Ok(());
     }
 
@@ -635,6 +691,7 @@ fn apply_add(
     skill_ids: &[String],
     tool_keys: &[String],
 ) -> Result<(), AppError> {
+    let start = Instant::now();
     let configured_mode = store.get_setting("sync_mode").map_err(AppError::db)?;
     let disabled = tool_service::get_disabled_tools(store);
 
@@ -706,9 +763,11 @@ fn apply_add(
     }
 
     log::info!(
-        "apply_skills_to_tools(Add): skills={} tools={} synced={synced} failed={failed}",
+        "apply_skills_to_tools(Add): skills={} requested_tools={} active_tools={} synced={synced} failed={failed} elapsed={} ms",
         skill_ids.len(),
+        tool_keys.len(),
         adapters.len(),
+        start.elapsed().as_millis()
     );
     Ok(())
 }
@@ -718,6 +777,7 @@ fn apply_remove(
     skill_ids: &[String],
     tool_keys: &[String],
 ) -> Result<(), AppError> {
+    let start = Instant::now();
     let tool_set: HashSet<&String> = tool_keys.iter().collect();
 
     let mut to_delete: Vec<(String, String, PathBuf)> = Vec::new();
@@ -735,6 +795,11 @@ fn apply_remove(
     }
 
     if to_delete.is_empty() {
+        log::info!(
+            "apply_skills_to_tools(Remove): pairs=0 requested_tools={} elapsed={} ms",
+            tool_keys.len(),
+            start.elapsed().as_millis()
+        );
         return Ok(());
     }
 
@@ -752,6 +817,7 @@ fn apply_remove(
     // a remaining (skill_id, tool) row still points at. This prevents wiping a
     // directory another adapter is sharing.
     let candidate_paths: HashSet<PathBuf> = to_delete.iter().map(|(_, _, p)| p.clone()).collect();
+    let candidate_count = candidate_paths.len();
     let still_referenced: HashSet<PathBuf> = store
         .get_all_targets()
         .unwrap_or_default()
@@ -779,8 +845,10 @@ fn apply_remove(
     }
 
     log::info!(
-        "apply_skills_to_tools(Remove): pairs={} fs_removed={removed}",
+        "apply_skills_to_tools(Remove): pairs={} paths={} fs_removed={removed} elapsed={} ms",
         to_delete.len(),
+        candidate_count,
+        start.elapsed().as_millis()
     );
     Ok(())
 }
