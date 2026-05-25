@@ -7,6 +7,10 @@ import i18n from "../i18n";
 import { applyTextSize } from "../lib/textScale";
 import { toast } from "sonner";
 
+interface RefreshManagedSkillsOptions {
+  refreshProjects?: boolean;
+}
+
 interface AppState {
   presets: Preset[];
   /** Backend-tracked "last applied to default targets". Drives the "Applied to..." status, not the sidebar selection. */
@@ -23,8 +27,9 @@ interface AppState {
   refreshAppData: () => Promise<void>;
   refreshPresets: () => Promise<void>;
   refreshTools: () => Promise<void>;
-  refreshManagedSkills: () => Promise<void>;
+  refreshManagedSkills: (options?: RefreshManagedSkillsOptions) => Promise<void>;
   refreshProjects: () => Promise<void>;
+  suppressAppFileRefresh: (durationMs?: number) => void;
   setViewedPresetId: (id: string) => void;
   applyPresetToDefault: (id: string) => Promise<void>;
   clearAppError: () => void;
@@ -60,6 +65,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const autoCheckInFlightRef = useRef(false);
   const lastUpdateNotificationRef = useRef<string | null>(null);
   const lastActivePresetIdRef = useRef<string | null>(null);
+  const suppressFileRefreshUntilRef = useRef(0);
 
   const setTranslatedError = useCallback((key: string) => {
     setAppError(i18n.t("common.loadFailed", { item: i18n.t(key) }));
@@ -121,7 +127,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const refreshManagedSkills = useCallback(async () => {
+  const refreshManagedSkills = useCallback(async (options?: RefreshManagedSkillsOptions) => {
     try {
       const skills = await api.getManagedSkills();
       setManagedSkills(skills);
@@ -131,12 +137,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setTranslatedError("common.skills");
     }
     // Managed skill changes affect project sync health badges
-    refreshProjects();
+    if (options?.refreshProjects !== false) {
+      refreshProjects();
+    }
   }, [setTranslatedError, refreshProjects]);
+
+  const suppressAppFileRefresh = useCallback((durationMs = 2500) => {
+    suppressFileRefreshUntilRef.current = Math.max(
+      suppressFileRefreshUntilRef.current,
+      Date.now() + durationMs
+    );
+  }, []);
 
   const refreshAppData = useCallback(async () => {
     setLoading(true);
-    await Promise.all([refreshPresets(), refreshTools(), refreshManagedSkills(), refreshProjects()]);
+    await Promise.all([
+      refreshPresets(),
+      refreshTools(),
+      refreshManagedSkills({ refreshProjects: false }),
+      refreshProjects(),
+    ]);
     setLoading(false);
   }, [refreshManagedSkills, refreshProjects, refreshPresets, refreshTools]);
 
@@ -220,10 +240,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
     const unlistenPromise = listen("app-files-changed", () => {
+      if (Date.now() < suppressFileRefreshUntilRef.current) {
+        return;
+      }
       if (refreshTimer) {
         clearTimeout(refreshTimer);
       }
       refreshTimer = setTimeout(() => {
+        if (Date.now() < suppressFileRefreshUntilRef.current) {
+          return;
+        }
         refreshAppData().catch((error) => {
           console.error("Failed to refresh after filesystem change:", error);
         });
@@ -383,6 +409,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         refreshTools,
         refreshManagedSkills,
         refreshProjects,
+        suppressAppFileRefresh,
         setViewedPresetId,
         applyPresetToDefault: handleApplyPresetToDefault,
         clearAppError: () => setAppError(null),

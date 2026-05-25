@@ -213,7 +213,14 @@ export function WorkspaceView({ config }: { config: WorkspaceConfig }) {
   const { agentKey } = useParams<{ agentKey?: string }>();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { tools, managedSkills, presets, refreshManagedSkills, refreshTools } = useApp();
+  const {
+    tools,
+    managedSkills,
+    presets,
+    refreshManagedSkills,
+    refreshTools,
+    suppressAppFileRefresh,
+  } = useApp();
 
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
@@ -536,14 +543,23 @@ export function WorkspaceView({ config }: { config: WorkspaceConfig }) {
 
   const handlePresetBatchApply = useCallback(
     async (preset: Preset, mode: PresetApplyMode) => {
-      await api.applyPresetToTools(preset.id, presetBarAgentKeys, mode);
+      suppressAppFileRefresh(5000);
+      try {
+        await api.applyPresetToTools(preset.id, presetBarAgentKeys, mode);
+      } finally {
+        suppressAppFileRefresh(2500);
+      }
     },
-    [presetBarAgentKeys]
+    [presetBarAgentKeys, suppressAppFileRefresh]
   );
 
   const handlePresetComplete = useCallback(async () => {
-    await Promise.all([refreshManagedSkills(), refreshTools(), loadLocalSkills()]);
-  }, [loadLocalSkills, refreshManagedSkills, refreshTools]);
+    const tasks = [refreshManagedSkills({ refreshProjects: false })];
+    if (currentToolKey) {
+      tasks.push(loadLocalSkills());
+    }
+    await Promise.all(tasks);
+  }, [currentToolKey, loadLocalSkills, refreshManagedSkills]);
 
   const renderLocalSkillActions = (skill: ProjectSkill, variant: "grid" | "list") => {
     const uploadKey = `upload:${skill.relative_path}`;
