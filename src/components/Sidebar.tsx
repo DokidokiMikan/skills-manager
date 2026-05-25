@@ -15,6 +15,7 @@ import {
   Link2,
   ChevronDown,
   ChevronRight,
+  KeyRound,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -48,11 +49,25 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { presets, viewedPreset, setViewedPresetId, refreshPresets, refreshManagedSkills, projects, refreshProjects, tools, managedSkills } = useApp();
+  const getApiConnectionErrorMessage = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("Command list_api_profiles not found")) {
+      return t("sidebar.apiStatus.apiManagementCommandMissing");
+    }
+    if (message.includes("Command check_active_api_connection not found")) {
+      return t("sidebar.apiStatus.connectionCommandMissing");
+    }
+    return message;
+  };
   const [showCreate, setShowCreate] = useState(false);
   const [showAddProject, setShowAddProject] = useState(false);
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string; icon?: string | null } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteProjectTarget, setDeleteProjectTarget] = useState<{ id: string; name: string } | null>(null);
+  const [apiConnectionStatus, setApiConnectionStatus] =
+    useState<"unknown" | "ok" | "failed">("unknown");
+  const [apiConnectionMessage, setApiConnectionMessage] =
+    useState(() => t("sidebar.apiStatus.notChecked"));
   const installedTools = useMemo(() => tools.filter((t) => t.installed && t.enabled), [tools]);
   const installedCodingTools = useMemo(
     () => installedTools.filter((t) => t.category === "coding"),
@@ -85,6 +100,56 @@ export function Sidebar() {
 
   useEffect(() => { setOrderedPresets(presets); }, [presets]);
   useEffect(() => { setOrderedProjects(projects); }, [projects]);
+  useEffect(() => {
+    let cancelled = false;
+
+    const check = async () => {
+      setApiConnectionStatus("unknown");
+      setApiConnectionMessage(t("sidebar.apiStatus.checking"));
+      try {
+        const profiles = await api.listApiProfiles();
+        const activeProfile = profiles.find((profile) => profile.enabled);
+        if (!activeProfile) {
+          if (cancelled) return;
+          setApiConnectionStatus("unknown");
+          setApiConnectionMessage(t("sidebar.apiStatus.noEnabledApi"));
+          return;
+        }
+
+        const result = await api.checkActiveApiConnection();
+        if (cancelled) return;
+        setApiConnectionStatus(result.status === "ok" ? "ok" : "failed");
+        setApiConnectionMessage(result.message);
+      } catch (error) {
+        if (cancelled) return;
+        setApiConnectionStatus("failed");
+        setApiConnectionMessage(getApiConnectionErrorMessage(error));
+      }
+    };
+
+    void check();
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
+  useEffect(() => {
+    const handleApiStatusChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        status?: "unknown" | "ok" | "failed";
+        message?: string;
+        isActive?: boolean;
+      }>;
+      if (!customEvent.detail?.isActive) return;
+
+      setApiConnectionStatus(customEvent.detail.status ?? "unknown");
+      setApiConnectionMessage(customEvent.detail.message ?? t("sidebar.apiStatus.notChecked"));
+    };
+
+    window.addEventListener("api-connection-status-changed", handleApiStatusChanged);
+    return () => {
+      window.removeEventListener("api-connection-status-changed", handleApiStatusChanged);
+    };
+  }, [t]);
   useEffect(() => {
     const stored = localStorage.getItem("skills-manager:tool-order");
     const storedOrder: string[] = stored ? JSON.parse(stored) : [];
@@ -703,6 +768,34 @@ export function Sidebar() {
 
         {/* Settings */}
         <div className="p-2.5 border-t border-border-subtle shrink-0">
+          <Link
+            to="/api-management"
+            className={cn(
+              "mb-0.5 flex items-center gap-2.5 px-2.5 py-[7px] rounded-[5px] text-sm font-medium transition-colors outline-none",
+              location.pathname === "/api-management"
+                ? "bg-surface-active text-primary"
+                : "text-tertiary hover:text-secondary hover:bg-surface-hover"
+            )}
+          >
+            <KeyRound
+              className={cn(
+                "w-4 h-4 shrink-0",
+                location.pathname === "/api-management" ? "text-accent" : "text-muted"
+              )}
+            />
+            <span className="min-w-0 flex-1 truncate">{t("sidebar.apiManagement")}</span>
+            <span
+              title={apiConnectionMessage}
+              className={cn(
+                "h-2.5 w-2.5 shrink-0 rounded-full",
+                apiConnectionStatus === "ok"
+                  ? "bg-emerald-400"
+                  : apiConnectionStatus === "failed"
+                    ? "bg-red-400"
+                    : "bg-zinc-600"
+              )}
+            />
+          </Link>
           <Link
             to="/settings"
             className={cn(

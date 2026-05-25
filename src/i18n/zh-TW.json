@@ -12,7 +12,15 @@
     "newPreset": "新增 Preset",
     "projects": "專案工作區",
     "addProject": "關聯專案",
-    "settings": "設定"
+    "apiManagement": "API 管理",
+    "settings": "設定",
+    "apiStatus": {
+      "notChecked": "尚未檢測 API",
+      "checking": "正在檢測 API...",
+      "noEnabledApi": "沒有啟用的 API",
+      "apiManagementCommandMissing": "缺少 API 管理後端命令，請重啟應用。",
+      "connectionCommandMissing": "缺少 API 連線檢測命令，請重啟應用。"
+    }
   },
   "help": {
     "eyebrow": "操作指南",
@@ -66,6 +74,159 @@
       "open": "開啟",
       "toggle": "呼叫"
     }
+  },
+  "apiManagement": {
+    "title": "API 管理",
+    "subtitle": "管理可重複使用的模型 API 設定。",
+    "loading": "正在載入 API 設定...",
+    "page": {
+      "title": "API 管理",
+      "description": "管理可重複使用的模型 API 設定。"
+    },
+    "providers": {
+      "openai-compatible": "OpenAI 相容",
+      "anthropic-compatible": "Anthropic 相容",
+      "lm-studio-api": "LM Studio",
+      "lm-studio": "LM Studio",
+      "llama-cpp": "llama.cpp",
+      "ollama": "Ollama"
+    },
+    "add": {
+      "title": "新增模型 API",
+      "description": "建立可重複使用的 API 設定，用於測試連線和後續 AI 功能。"
+    },
+    "tabs": {
+      "manual": "手動填寫",
+      "paste": "貼上解析"
+    },
+    "fields": {
+      "name": "名稱",
+      "apiName": "API 名稱",
+      "provider": "供應商",
+      "baseUrl": "Base URL",
+      "model": "顯示模型",
+      "modelName": "顯示模型",
+      "modelId": "模型 ID",
+      "apiKey": "API Key",
+      "note": "備註",
+      "enabled": "啟用這個設定"
+    },
+    "placeholders": {
+      "name": "我的模型 API",
+      "apiName": "我的模型 API",
+      "baseUrl": "https://api.example.com",
+      "model": "GPT-4.1",
+      "modelName": "GPT-4.1",
+      "modelId": "model-id",
+      "apiKey": "本機服務可留空",
+      "note": "可選"
+    },
+    "paste": {
+      "label": "貼上 API 資訊",
+      "placeholder": "可貼上任意順序，例如：\n供應商：OpenAI\nBase URL：https://api.example.com/v1\n模型：gpt-4.1\nAPI Key：sk-..."
+    },
+    "actions": {
+      "loadModels": "模型",
+      "save": "儲存",
+      "add": "新增",
+      "addModel": "新增模型",
+      "addToList": "新增到列表",
+      "collapse": "收起",
+      "parsePaste": "解析",
+      "enable": "啟用",
+      "disable": "停用",
+      "test": "測試",
+      "testing": "測試中...",
+      "testConnection": "測試連線",
+      "edit": "編輯",
+      "settings": "設定",
+      "copy": "複製",
+      "delete": "刪除",
+      "cancel": "取消",
+      "close": "關閉",
+      "confirmDelete": "刪除",
+      "deleting": "刪除中...",
+      "saving": "儲存中...",
+      "saveSettings": "儲存設定",
+      "setDefault": "設為預設",
+      "useForTranslation": "用於翻譯",
+      "cancelTranslation": "取消翻譯",
+      "showApiKey": "顯示 API Key",
+      "hideApiKey": "隱藏 API Key"
+    },
+    "messages": {
+      "saved": "API 設定已儲存",
+      "deleted": "API 設定已刪除",
+      "baseUrlRequired": "請先填寫 Base URL",
+      "loadingModels": "正在載入模型..."
+    },
+    "status": {
+      "enabled": "已啟用",
+      "disabled": "已停用",
+      "pending": "等待檢測",
+      "notTested": "尚未測試",
+      "notChecked": "尚未檢測",
+      "checkingConnection": "正在檢測連線...",
+      "connectionOk": "連線正常",
+      "connectionFailed": "連線失敗",
+      "closed": "已關閉",
+      "apiClosed": "API 已停用",
+      "noEnabledApi": "沒有啟用的 API",
+      "currentEnabled": "目前預設 API：",
+      "translationUse": "翻譯 API：",
+      "translationFollowsDefault": "（跟隨預設）",
+      "translationBadge": "翻譯"
+    },
+    "modelLabels": {
+      "unspecified": "未指定模型",
+      "specified": "{{model}}",
+      "specifiedUnavailable": "{{model}} 可能不可用",
+      "autoOk": "已自動識別模型",
+      "autoOkWithFallback": "已自動識別 · 備用 {{model}}",
+      "autoFailed": "自動取得模型失敗",
+      "autoFailedWithFallback": "自動取得失敗 · 備用 {{model}}",
+      "autoTry": "嘗試自動取得模型",
+      "autoTryWithFallback": "嘗試自動取得 · 備用 {{model}}"
+    },
+    "modelLookup": {
+      "focusHint": "聚焦此欄位時載入可用模型",
+      "baseUrlRequired": "請先填寫 Base URL",
+      "loading": "正在載入模型...",
+      "failedManual": "沒有發現模型",
+      "providerMessage": "{{provider}} · {{message}}"
+    },
+    "defaults": {
+      "unnamedApi": "未命名 API",
+      "unnamedModel": "未命名模型",
+      "copyName": "{{model}} 副本"
+    },
+    "list": {
+      "title": "設定列表",
+      "description": "已儲存的 API 設定",
+      "count": "{{count}} 個設定",
+      "empty": "還沒有 API 設定"
+    },
+    "card": {
+      "provider": "供應商：{{provider}}",
+      "baseUrl": "URL：{{url}}",
+      "apiKey": "API Key：{{status}}",
+      "apiKeySet": "已設定",
+      "apiKeyMissing": "未設定"
+    },
+    "edit": {
+      "title": "編輯 API 設定",
+      "description": "更新連線和模型設定。"
+    },
+    "delete": {
+      "title": "刪除 API 設定",
+      "confirm": "刪除「{{model}}」？"
+    },
+    "errors": {
+      "apiManagementCommandMissing": "缺少 API 管理後端命令，請重啟 Tauri 應用。",
+      "connectionCommandMissing": "缺少 API 連線檢測命令，請重啟 Tauri 應用。",
+      "testCommandMissing": "缺少 API 測試命令，請重啟 Tauri 應用。"
+    },
+    "confirmDelete": "刪除 API 設定「{{name}}」？"
   },
   "dashboard": {
     "greeting": "你好！",

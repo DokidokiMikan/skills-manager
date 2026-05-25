@@ -12,7 +12,15 @@
     "newPreset": "新建 Preset",
     "projects": "项目工作区",
     "addProject": "关联项目",
-    "settings": "设置"
+    "apiManagement": "API 管理",
+    "settings": "设置",
+    "apiStatus": {
+      "notChecked": "尚未检测 API",
+      "checking": "正在检测 API...",
+      "noEnabledApi": "没有启用的 API",
+      "apiManagementCommandMissing": "缺少 API 管理后端命令，请重启应用。",
+      "connectionCommandMissing": "缺少 API 连接检测命令，请重启应用。"
+    }
   },
   "help": {
     "eyebrow": "操作指南",
@@ -66,6 +74,159 @@
       "open": "打开",
       "toggle": "呼出"
     }
+  },
+  "apiManagement": {
+    "title": "API 管理",
+    "subtitle": "管理可复用的模型 API 配置。",
+    "loading": "正在加载 API 配置...",
+    "page": {
+      "title": "API 管理",
+      "description": "管理可复用的模型 API 配置。"
+    },
+    "providers": {
+      "openai-compatible": "OpenAI 兼容",
+      "anthropic-compatible": "Anthropic 兼容",
+      "lm-studio-api": "LM Studio",
+      "lm-studio": "LM Studio",
+      "llama-cpp": "llama.cpp",
+      "ollama": "Ollama"
+    },
+    "add": {
+      "title": "添加模型 API",
+      "description": "创建可复用的 API 配置，用于测试连接和后续 AI 功能。"
+    },
+    "tabs": {
+      "manual": "手动填写",
+      "paste": "粘贴解析"
+    },
+    "fields": {
+      "name": "名称",
+      "apiName": "API 名称",
+      "provider": "供应商",
+      "baseUrl": "Base URL",
+      "model": "显示模型",
+      "modelName": "显示模型",
+      "modelId": "模型 ID",
+      "apiKey": "API Key",
+      "note": "备注",
+      "enabled": "启用这个配置"
+    },
+    "placeholders": {
+      "name": "我的模型 API",
+      "apiName": "我的模型 API",
+      "baseUrl": "https://api.example.com",
+      "model": "GPT-4.1",
+      "modelName": "GPT-4.1",
+      "modelId": "model-id",
+      "apiKey": "本地服务可留空",
+      "note": "可选"
+    },
+    "paste": {
+      "label": "粘贴 API 信息",
+      "placeholder": "可粘贴任意顺序，例如：\n供应商：OpenAI\nBase URL：https://api.example.com/v1\n模型：gpt-4.1\nAPI Key：sk-..."
+    },
+    "actions": {
+      "loadModels": "模型",
+      "save": "保存",
+      "add": "添加",
+      "addModel": "添加模型",
+      "addToList": "添加到列表",
+      "collapse": "收起",
+      "parsePaste": "解析",
+      "enable": "启用",
+      "disable": "停用",
+      "test": "测试",
+      "testing": "测试中...",
+      "testConnection": "测试连接",
+      "edit": "编辑",
+      "settings": "设置",
+      "copy": "复制",
+      "delete": "删除",
+      "cancel": "取消",
+      "close": "关闭",
+      "confirmDelete": "删除",
+      "deleting": "删除中...",
+      "saving": "保存中...",
+      "saveSettings": "保存设置",
+      "setDefault": "设为默认",
+      "useForTranslation": "用于翻译",
+      "cancelTranslation": "取消翻译",
+      "showApiKey": "显示 API Key",
+      "hideApiKey": "隐藏 API Key"
+    },
+    "messages": {
+      "saved": "API 配置已保存",
+      "deleted": "API 配置已删除",
+      "baseUrlRequired": "请先填写 Base URL",
+      "loadingModels": "正在加载模型..."
+    },
+    "status": {
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "pending": "等待检测",
+      "notTested": "尚未测试",
+      "notChecked": "尚未检测",
+      "checkingConnection": "正在检测连接...",
+      "connectionOk": "连接正常",
+      "connectionFailed": "连接失败",
+      "closed": "已关闭",
+      "apiClosed": "API 已停用",
+      "noEnabledApi": "没有启用的 API",
+      "currentEnabled": "当前默认 API：",
+      "translationUse": "翻译 API：",
+      "translationFollowsDefault": "（跟随默认）",
+      "translationBadge": "翻译"
+    },
+    "modelLabels": {
+      "unspecified": "未指定模型",
+      "specified": "{{model}}",
+      "specifiedUnavailable": "{{model}} 可能不可用",
+      "autoOk": "已自动识别模型",
+      "autoOkWithFallback": "已自动识别 · 备用 {{model}}",
+      "autoFailed": "自动获取模型失败",
+      "autoFailedWithFallback": "自动获取失败 · 备用 {{model}}",
+      "autoTry": "尝试自动获取模型",
+      "autoTryWithFallback": "尝试自动获取 · 备用 {{model}}"
+    },
+    "modelLookup": {
+      "focusHint": "聚焦此字段时加载可用模型",
+      "baseUrlRequired": "请先填写 Base URL",
+      "loading": "正在加载模型...",
+      "failedManual": "没有发现模型",
+      "providerMessage": "{{provider}} · {{message}}"
+    },
+    "defaults": {
+      "unnamedApi": "未命名 API",
+      "unnamedModel": "未命名模型",
+      "copyName": "{{model}} 副本"
+    },
+    "list": {
+      "title": "配置列表",
+      "description": "已保存的 API 配置",
+      "count": "{{count}} 个配置",
+      "empty": "还没有 API 配置"
+    },
+    "card": {
+      "provider": "供应商：{{provider}}",
+      "baseUrl": "URL：{{url}}",
+      "apiKey": "API Key：{{status}}",
+      "apiKeySet": "已设置",
+      "apiKeyMissing": "未设置"
+    },
+    "edit": {
+      "title": "编辑 API 配置",
+      "description": "更新连接和模型设置。"
+    },
+    "delete": {
+      "title": "删除 API 配置",
+      "confirm": "删除「{{model}}」？"
+    },
+    "errors": {
+      "apiManagementCommandMissing": "缺少 API 管理后端命令，请重启 Tauri 应用。",
+      "connectionCommandMissing": "缺少 API 连接检测命令，请重启 Tauri 应用。",
+      "testCommandMissing": "缺少 API 测试命令，请重启 Tauri 应用。"
+    },
+    "confirmDelete": "删除 API 配置「{{name}}」？"
   },
   "dashboard": {
     "greeting": "你好！",

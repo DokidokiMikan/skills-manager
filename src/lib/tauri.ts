@@ -369,6 +369,82 @@ export const getSettings = (key: string) =>
 export const setSettings = (key: string, value: string) =>
   invoke<void>("set_settings", { key, value });
 
+// ── API Profiles ──
+
+export interface ApiProfile {
+  id: string;
+  name: string;
+  provider: string;
+  baseUrl: string;
+  model: string;
+  modelId: string | null;
+  apiKey: string | null;
+  enabled: boolean;
+  note: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SaveApiProfileInput {
+  id?: string | null;
+  name: string;
+  provider: string;
+  baseUrl: string;
+  model: string;
+  modelId?: string | null;
+  apiKey?: string | null;
+  enabled?: boolean | null;
+  note?: string | null;
+}
+
+export interface TestApiProfileResult {
+  ok: boolean;
+  message: string;
+}
+
+export interface ActiveApiConnectionStatus {
+  status: "unknown" | "ok" | "failed";
+  message: string;
+  profileId: string | null;
+  profileName: string | null;
+}
+
+export interface ListApiProfileModelsResult {
+  supported: boolean;
+  models: string[];
+  message: string;
+}
+
+export const listApiProfiles = () =>
+  invoke<ApiProfile[]>("list_api_profiles");
+
+export const saveApiProfile = (input: SaveApiProfileInput) =>
+  invoke<ApiProfile>("save_api_profile", { request: input });
+
+export const deleteApiProfile = (id: string) =>
+  invoke<void>("delete_api_profile", { request: { id } });
+
+export const setApiProfileEnabled = (id: string, enabled: boolean) =>
+  invoke<ApiProfile>("set_api_profile_enabled", { request: { id, enabled } });
+
+export const testApiProfile = (id: string) =>
+  invoke<TestApiProfileResult>("test_api_profile", { request: { id } });
+
+export const checkActiveApiConnection = () =>
+  invoke<ActiveApiConnectionStatus>("check_active_api_connection");
+
+export const listApiProfileModels = (id: string) =>
+  invoke<ListApiProfileModelsResult>("list_api_profile_models", { request: { id } });
+
+export const listApiModelsForConfig = (input: {
+  provider: string;
+  baseUrl: string;
+  apiKey?: string | null;
+}) =>
+  invoke<ListApiProfileModelsResult>("list_api_models_for_config", {
+    request: input,
+  });
+
 export const getCentralRepoPath = () =>
   invoke<string>("get_central_repo_path");
 

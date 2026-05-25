@@ -963,6 +963,15 @@ pub fn run() {
             commands::settings::clear_last_panic,
             commands::settings::app_exit,
             commands::settings::hide_to_tray,
+            // API profiles
+            commands::api_profiles::list_api_profiles,
+            commands::api_profiles::save_api_profile,
+            commands::api_profiles::delete_api_profile,
+            commands::api_profiles::set_api_profile_enabled,
+            commands::api_profiles::test_api_profile,
+            commands::api_profiles::check_active_api_connection,
+            commands::api_profiles::list_api_profile_models,
+            commands::api_profiles::list_api_models_for_config,
             // Git Backup
             commands::git_backup::git_backup_fetch,
             commands::git_backup::git_backup_status,

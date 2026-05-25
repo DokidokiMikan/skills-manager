@@ -10,6 +10,7 @@ import {
   Folder,
   Home,
   ArrowRight,
+  KeyRound,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { getPresetIconOption } from "../lib/presetIcons";
@@ -171,6 +172,13 @@ export function CommandPalette() {
         label: t("commandPalette.scanImport"),
         icon: <FolderOpen className="h-3.5 w-3.5" />,
         run: () => navigate("/install?tab=local"),
+      },
+      {
+        id: "action:api-management",
+        kind: "action",
+        label: t("sidebar.apiManagement"),
+        icon: <KeyRound className="h-3.5 w-3.5" />,
+        run: () => navigate("/api-management"),
       },
       {
         id: "action:settings",

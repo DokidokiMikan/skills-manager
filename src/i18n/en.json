@@ -12,7 +12,15 @@
     "newPreset": "New Preset",
     "projects": "Project Workspaces",
     "addProject": "Link Project",
-    "settings": "Settings"
+    "apiManagement": "API Management",
+    "settings": "Settings",
+    "apiStatus": {
+      "notChecked": "API not checked",
+      "checking": "Checking API...",
+      "noEnabledApi": "No API enabled",
+      "apiManagementCommandMissing": "API management backend command is missing. Restart the app.",
+      "connectionCommandMissing": "API connection check command is missing. Restart the app."
+    }
   },
   "help": {
     "eyebrow": "Guide",
@@ -66,6 +74,159 @@
       "open": "open",
       "toggle": "toggle"
     }
+  },
+  "apiManagement": {
+    "title": "API Management",
+    "subtitle": "Manage reusable model API profiles.",
+    "loading": "Loading API profiles...",
+    "page": {
+      "title": "API Management",
+      "description": "Manage reusable model API profiles."
+    },
+    "providers": {
+      "openai-compatible": "OpenAI compatible",
+      "anthropic-compatible": "Anthropic compatible",
+      "lm-studio-api": "LM Studio",
+      "lm-studio": "LM Studio",
+      "llama-cpp": "llama.cpp",
+      "ollama": "Ollama"
+    },
+    "add": {
+      "title": "Add model API",
+      "description": "Create reusable API profiles for testing and later AI features."
+    },
+    "tabs": {
+      "manual": "Manual",
+      "paste": "Paste"
+    },
+    "fields": {
+      "name": "Name",
+      "apiName": "API name",
+      "provider": "Provider",
+      "baseUrl": "Base URL",
+      "model": "Display model",
+      "modelName": "Display model",
+      "modelId": "Model ID",
+      "apiKey": "API Key",
+      "note": "Note",
+      "enabled": "Enable this profile"
+    },
+    "placeholders": {
+      "name": "My model API",
+      "apiName": "My model API",
+      "baseUrl": "https://api.example.com",
+      "model": "GPT-4.1",
+      "modelName": "GPT-4.1",
+      "modelId": "model-id",
+      "apiKey": "Optional for local services",
+      "note": "Optional"
+    },
+    "paste": {
+      "label": "Paste API information",
+      "placeholder": "Paste in any order, for example:\nProvider: OpenAI\nBase URL: https://api.example.com/v1\nModel: gpt-4.1\nAPI Key: sk-..."
+    },
+    "actions": {
+      "loadModels": "Models",
+      "save": "Save",
+      "add": "Add",
+      "addModel": "Add model",
+      "addToList": "Add to list",
+      "collapse": "Collapse",
+      "parsePaste": "Parse",
+      "enable": "Enable",
+      "disable": "Disable",
+      "test": "Test",
+      "testing": "Testing...",
+      "testConnection": "Test connection",
+      "edit": "Edit",
+      "settings": "Settings",
+      "copy": "Copy",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "close": "Close",
+      "confirmDelete": "Delete",
+      "deleting": "Deleting...",
+      "saving": "Saving...",
+      "saveSettings": "Save settings",
+      "setDefault": "Set default",
+      "useForTranslation": "Use for translation",
+      "cancelTranslation": "Cancel translation",
+      "showApiKey": "Show API Key",
+      "hideApiKey": "Hide API Key"
+    },
+    "messages": {
+      "saved": "API profile saved",
+      "deleted": "API profile deleted",
+      "baseUrlRequired": "Enter a Base URL first",
+      "loadingModels": "Loading models..."
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "pending": "Pending check",
+      "notTested": "Not tested",
+      "notChecked": "Not checked",
+      "checkingConnection": "Checking connection...",
+      "connectionOk": "Connection OK",
+      "connectionFailed": "Connection failed",
+      "closed": "Closed",
+      "apiClosed": "API disabled",
+      "noEnabledApi": "No API enabled",
+      "currentEnabled": "Current default API: ",
+      "translationUse": "Translation API: ",
+      "translationFollowsDefault": "(follows default)",
+      "translationBadge": "Translation"
+    },
+    "modelLabels": {
+      "unspecified": "Unspecified model",
+      "specified": "{{model}}",
+      "specifiedUnavailable": "{{model}} may be unavailable",
+      "autoOk": "Auto model detected",
+      "autoOkWithFallback": "Auto model detected · fallback {{model}}",
+      "autoFailed": "Auto model lookup failed",
+      "autoFailedWithFallback": "Auto lookup failed · fallback {{model}}",
+      "autoTry": "Auto model lookup",
+      "autoTryWithFallback": "Auto model lookup · fallback {{model}}"
+    },
+    "modelLookup": {
+      "focusHint": "Focus this field to load available models",
+      "baseUrlRequired": "Enter a Base URL first",
+      "loading": "Loading models...",
+      "failedManual": "No models found",
+      "providerMessage": "{{provider}} · {{message}}"
+    },
+    "defaults": {
+      "unnamedApi": "Untitled API",
+      "unnamedModel": "Unnamed model",
+      "copyName": "{{model}} copy"
+    },
+    "list": {
+      "title": "Profiles",
+      "description": "Saved API profiles",
+      "count": "{{count}} profile(s)",
+      "empty": "No API profiles yet"
+    },
+    "card": {
+      "provider": "Provider: {{provider}}",
+      "baseUrl": "URL: {{url}}",
+      "apiKey": "API Key: {{status}}",
+      "apiKeySet": "set",
+      "apiKeyMissing": "missing"
+    },
+    "edit": {
+      "title": "Edit API profile",
+      "description": "Update connection and model settings."
+    },
+    "delete": {
+      "title": "Delete API profile",
+      "confirm": "Delete \"{{model}}\"?"
+    },
+    "errors": {
+      "apiManagementCommandMissing": "API management backend command is missing. Restart the Tauri app.",
+      "connectionCommandMissing": "API connection check command is missing. Restart the Tauri app.",
+      "testCommandMissing": "API test command is missing. Restart the Tauri app."
+    },
+    "confirmDelete": "Delete API profile \"{{name}}\"?"
   },
   "dashboard": {
     "greeting": "Hello!",
