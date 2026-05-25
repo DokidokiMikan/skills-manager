@@ -368,7 +368,8 @@
         "pending": "Pending",
         "imported": "Imported"
       }
-    }
+    },
+    "gitReinstall": "Reinstall and Update"
   },
   "settings": {
     "title": "Settings",
@@ -599,7 +600,9 @@
     "search": "Search",
     "goToSettings": "Settings",
     "expandAll": "Show all",
-    "collapse": "Collapse"
+    "collapse": "Collapse",
+    "close": "Close",
+    "refresh": "Refresh"
   },
   "addFromLibrary": {
     "title": "Add from Library",

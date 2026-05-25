@@ -239,7 +239,36 @@
     "batchEnable": "啟用 {{count}} 個",
     "batchDisable": "停用 {{count}} 個",
     "batchEnabled": "已啟用 {{count}} 個 Skill",
-    "batchDisabled": "已停用 {{count}} 個 Skill"
+    "batchDisabled": "已停用 {{count}} 個 Skill",
+    "agentToggleDisabled": "{{agent}} 已停用",
+    "agentToggleEnabled": "{{agent}} 已啟用",
+    "batchEditTags": "標籤 ({{count}})",
+    "batchTagDialog": {
+      "addButton": "新增",
+      "apply": "套用",
+      "clickToRemove": "點擊標記為移除",
+      "currentTags": "目前標籤（點擊標記移除）",
+      "noTags": "選取的 Skill 尚無標籤",
+      "title": "編輯 {{count}} 個 Skill 的標籤",
+      "toAdd": "新增標籤",
+      "undoRemove": "點擊保留此標籤"
+    },
+    "batchTagsFailed": "{{count}} 個 Skill 標籤更新失敗",
+    "batchTagsUpdated": "已更新 {{count}} 個 Skill 的標籤",
+    "docTabs": {
+      "diff": "差異",
+      "local": "本機",
+      "source": "來源"
+    },
+    "sourceBranch": "分支",
+    "sourceDiffUnavailable": "目前無法讀取來源版本內容",
+    "sourceResolved": "解析後來源",
+    "sourceRevision": "版本",
+    "sourceSubpath": "子路徑",
+    "targetClickInstall": "點擊安裝",
+    "targetClickUninstall": "點擊解除安裝",
+    "targetInstalled": "已將 {{name}} 安裝到 {{agent}}",
+    "targetUninstalled": "已從 {{agent}} 解除安裝 {{name}}"
   },
   "install": {
     "title": "安裝 Skills",
@@ -334,6 +363,15 @@
         "pending": "待匯入",
         "imported": "已匯入"
       }
+    },
+    "gitPreview": {
+      "confirm": "匯入選取項目",
+      "description": "從倉庫中找到以下 Skill，可視需要重新命名後再確認匯入。",
+      "deselectAll": "取消全選",
+      "empty": "未找到可匯入的 Skill",
+      "namePlaceholder": "Skill 名稱",
+      "selectAll": "全選",
+      "title": "選擇要匯入的 Skill"
     }
   },
   "settings": {
@@ -518,7 +556,24 @@
     "gitErrorRejected": "遠端有新的更新，需要先合併後再同步。",
     "gitErrorUnrelatedHistories": "本機倉庫與遠端倉庫歷史不一致。請打開「修復同步設定」選擇處理方式。",
     "gitErrorNoUpstream": "尚未建立遠端追蹤關係。請打開「修復同步設定」處理。",
-    "gitErrorGeneric": "Git 操作失敗，請檢查設定中的遠端倉庫位址後重試。"
+    "gitErrorGeneric": "Git 操作失敗，請檢查設定中的遠端倉庫位址後重試。",
+    "closeAction": "關閉行為",
+    "closeActionDesc": "選擇點擊視窗關閉按鈕後的應用程式行為。",
+    "closeAction_ask": "每次詢問",
+    "closeAction_close": "結束應用程式",
+    "closeAction_hide": "最小化到系統匣",
+    "dragToReorder": "拖曳調整順序",
+    "proxyConfig": "網路代理",
+    "proxyUrl": "代理位址",
+    "proxyUrlDesc": "設定後，所有 Git 拉取和網路請求都會透過此代理連線。留空則直接連線。",
+    "proxyUrlInvalid": "代理位址必須以 http://、https:// 或 socks5:// 開頭",
+    "proxyUrlPlaceholder": "http://127.0.0.1:7890",
+    "proxyUrlSaved": "代理設定已儲存",
+    "trayIcon": "系統匣圖示",
+    "trayIconDesc": "在系統匣中顯示圖示，方便快速顯示或結束應用程式。",
+    "trayIconOffHint": "系統匣圖示已隱藏，因此關閉視窗會直接結束應用程式。",
+    "trayIcon_off": "隱藏",
+    "trayIcon_on": "顯示"
   },
   "common": {
     "loading": "載入中...",
@@ -540,7 +595,10 @@
     "create": "建立",
     "goToSettings": "設定",
     "expandAll": "展開全部",
-    "collapse": "收合"
+    "collapse": "收合",
+    "close": "關閉",
+    "refresh": "重新整理",
+    "search": "搜尋"
   },
   "addFromLibrary": {
     "title": "從技能庫新增",
@@ -708,7 +766,18 @@
     "skillDirectoryNotFound": "找不到 Skill 目錄",
     "batchEditTags": "標籤 ({{count}})",
     "batchTagsUpdated": "已更新 {{count}} 個中心 Skill 的標籤",
-    "batchTagsFailed": "{{count}} 個中心 Skill 標籤更新失敗"
+    "batchTagsFailed": "{{count}} 個中心 Skill 標籤更新失敗",
+    "addCallout": "也支援批次新增：在「新增 Skill」視窗中依標籤篩選，可一次推送一組同類 Skill。",
+    "addSkill": "新增 Skill",
+    "addSkillsCta": "從中央倉庫新增 Skill",
+    "addSkillsToProject": "新增 Skill 到專案",
+    "agentClickAdd": "點擊新增",
+    "agentClickRemove": "點擊移除",
+    "docTabs": {
+      "center": "中央"
+    },
+    "exportTagFilterHint": "選擇一個或多個標籤，可批次新增同類 Skill（例如「前端」+「偵錯」）。",
+    "exportTagFilterLabel": "按標籤篩選："
   },
   "presetActions": {
     "button": "套用 Preset",
@@ -806,5 +875,12 @@
         "diverged": "衝突"
       }
     }
+  },
+  "closeAction": {
+    "close": "結束應用程式",
+    "hide": "最小化到系統匣",
+    "message": "最小化到系統匣後，應用程式仍會在背景執行，你可以從系統匣圖示重新開啟。",
+    "remember": "記住我的選擇，下次不再提示",
+    "title": "關閉行為"
   }
 }
