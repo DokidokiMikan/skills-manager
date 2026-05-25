@@ -717,8 +717,17 @@ fn apply_add(
 
     let mut synced = 0usize;
     let mut failed = 0usize;
+    let mut fs_elapsed = 0u128;
+    let mut db_elapsed = 0u128;
+    let mut target_records: Vec<SkillTargetRecord> = Vec::new();
+    let skills_by_id: HashMap<String, _> = store
+        .get_all_skills()
+        .map_err(AppError::db)?
+        .into_iter()
+        .map(|skill| (skill.id.clone(), skill))
+        .collect();
     for skill_id in skill_ids {
-        let Ok(Some(skill)) = store.get_skill_by_id(skill_id) else {
+        let Some(skill) = skills_by_id.get(skill_id) else {
             log::warn!("apply_skills_to_tools: skill {skill_id} not found");
             continue;
         };
@@ -727,10 +736,12 @@ fn apply_add(
         for (tool_key, adapter) in &adapters {
             let target = adapter.skills_dir().join(&target_name);
             let mode = sync_engine::sync_mode_for_tool(tool_key, configured_mode.as_deref());
+            let fs_start = Instant::now();
             match sync_engine::sync_skill(&source, &target, mode) {
                 Ok(actual_mode) => {
+                    fs_elapsed += fs_start.elapsed().as_millis();
                     let now = chrono::Utc::now().timestamp_millis();
-                    let target_record = SkillTargetRecord {
+                    target_records.push(SkillTargetRecord {
                         id: uuid::Uuid::new_v4().to_string(),
                         skill_id: skill_id.clone(),
                         tool: tool_key.clone(),
@@ -740,17 +751,10 @@ fn apply_add(
                         synced_at: Some(now),
                         last_error: None,
                         source_hash: skill.content_hash.clone(),
-                    };
-                    if let Err(e) = store.insert_target(&target_record) {
-                        log::warn!(
-                            "apply_skills_to_tools: failed to insert target for skill {skill_id} / {tool_key}: {e}"
-                        );
-                        failed += 1;
-                    } else {
-                        synced += 1;
-                    }
+                    });
                 }
                 Err(e) => {
+                    fs_elapsed += fs_start.elapsed().as_millis();
                     failed += 1;
                     log::warn!(
                         "apply_skills_to_tools: failed to sync skill {skill_id} ({}) to {}: {e}",
@@ -762,11 +766,28 @@ fn apply_add(
         }
     }
 
+    if !target_records.is_empty() {
+        let db_start = Instant::now();
+        if let Err(e) = store.insert_targets(&target_records) {
+            db_elapsed += db_start.elapsed().as_millis();
+            failed += target_records.len();
+            log::warn!(
+                "apply_skills_to_tools: failed to insert {} target records: {e}",
+                target_records.len()
+            );
+        } else {
+            db_elapsed += db_start.elapsed().as_millis();
+            synced += target_records.len();
+        }
+    }
+
     log::info!(
-        "apply_skills_to_tools(Add): skills={} requested_tools={} active_tools={} synced={synced} failed={failed} elapsed={} ms",
+        "apply_skills_to_tools(Add): skills={} requested_tools={} active_tools={} synced={synced} failed={failed} fs_elapsed={} ms db_elapsed={} ms elapsed={} ms",
         skill_ids.len(),
         tool_keys.len(),
         adapters.len(),
+        fs_elapsed,
+        db_elapsed,
         start.elapsed().as_millis()
     );
     Ok(())
@@ -779,18 +800,16 @@ fn apply_remove(
 ) -> Result<(), AppError> {
     let start = Instant::now();
     let tool_set: HashSet<&String> = tool_keys.iter().collect();
+    let skill_set: HashSet<&String> = skill_ids.iter().collect();
 
     let mut to_delete: Vec<(String, String, PathBuf)> = Vec::new();
-    for skill_id in skill_ids {
-        let targets = store.get_targets_for_skill(skill_id).unwrap_or_default();
-        for target in targets {
-            if tool_set.contains(&target.tool) {
-                to_delete.push((
-                    skill_id.clone(),
-                    target.tool.clone(),
-                    PathBuf::from(&target.target_path),
-                ));
-            }
+    for target in store.get_all_targets().unwrap_or_default() {
+        if skill_set.contains(&target.skill_id) && tool_set.contains(&target.tool) {
+            to_delete.push((
+                target.skill_id.clone(),
+                target.tool.clone(),
+                PathBuf::from(&target.target_path),
+            ));
         }
     }
 
@@ -805,12 +824,29 @@ fn apply_remove(
 
     // Phase 1: drop the DB rows first so the post-delete recount below sees
     // the new ground truth when deciding which filesystem paths to keep.
-    for (skill_id, tool, _) in &to_delete {
-        if let Err(e) = store.delete_target(skill_id, tool) {
-            log::warn!(
-                "apply_skills_to_tools(Remove): failed to delete target record for skill {skill_id} / {tool}: {e}"
-            );
+    let mut db_elapsed = 0u128;
+    let delete_pairs: Vec<(String, String)> = to_delete
+        .iter()
+        .map(|(skill_id, tool, _)| (skill_id.clone(), tool.clone()))
+        .collect();
+    let db_start = Instant::now();
+    if let Err(e) = store.delete_targets(&delete_pairs) {
+        db_elapsed += db_start.elapsed().as_millis();
+        log::warn!(
+            "apply_skills_to_tools(Remove): batch delete failed for {} target records: {e}; falling back to per-row delete",
+            delete_pairs.len()
+        );
+        let fallback_start = Instant::now();
+        for (skill_id, tool, _) in &to_delete {
+            if let Err(e) = store.delete_target(skill_id, tool) {
+                log::warn!(
+                    "apply_skills_to_tools(Remove): failed to delete target record for skill {skill_id} / {tool}: {e}"
+                );
+            }
         }
+        db_elapsed += fallback_start.elapsed().as_millis();
+    } else {
+        db_elapsed += db_start.elapsed().as_millis();
     }
 
     // Phase 2: gather the paths the batch wanted to remove, then keep any path
@@ -826,6 +862,7 @@ fn apply_remove(
         .collect();
 
     let mut removed = 0usize;
+    let fs_start = Instant::now();
     for path in candidate_paths {
         if still_referenced.contains(&path) {
             log::debug!(
@@ -843,11 +880,14 @@ fn apply_remove(
             removed += 1;
         }
     }
+    let fs_elapsed = fs_start.elapsed().as_millis();
 
     log::info!(
-        "apply_skills_to_tools(Remove): pairs={} paths={} fs_removed={removed} elapsed={} ms",
+        "apply_skills_to_tools(Remove): pairs={} paths={} fs_removed={removed} db_elapsed={} ms fs_elapsed={} ms elapsed={} ms",
         to_delete.len(),
         candidate_count,
+        db_elapsed,
+        fs_elapsed,
         start.elapsed().as_millis()
     );
     Ok(())

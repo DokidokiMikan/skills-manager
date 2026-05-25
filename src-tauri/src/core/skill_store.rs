@@ -441,6 +441,36 @@ impl SkillStore {
         Ok(())
     }
 
+    pub fn insert_targets(&self, targets: &[SkillTargetRecord]) -> Result<()> {
+        if targets.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT OR REPLACE INTO skill_targets (id, skill_id, tool, target_path, mode, status, synced_at, last_error, source_hash)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            )?;
+            for target in targets {
+                stmt.execute(params![
+                    target.id,
+                    target.skill_id,
+                    target.tool,
+                    target.target_path,
+                    target.mode,
+                    target.status,
+                    target.synced_at,
+                    target.last_error,
+                    target.source_hash,
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn get_targets_for_skill(&self, skill_id: &str) -> Result<Vec<SkillTargetRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -489,6 +519,24 @@ impl SkillStore {
             "DELETE FROM skill_targets WHERE skill_id = ?1 AND tool = ?2",
             params![skill_id, tool],
         )?;
+        Ok(())
+    }
+
+    pub fn delete_targets(&self, targets: &[(String, String)]) -> Result<()> {
+        if targets.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        {
+            let mut stmt =
+                tx.prepare("DELETE FROM skill_targets WHERE skill_id = ?1 AND tool = ?2")?;
+            for (skill_id, tool) in targets {
+                stmt.execute(params![skill_id, tool])?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 
