@@ -546,6 +546,15 @@ export const switchPreset = (id: string) =>
 export const applyPresetToDefault = (id: string) =>
   invoke<void>("apply_preset_to_default", { id });
 
+export type PresetApplyMode = "add" | "remove";
+
+export const applyPresetToTools = (
+  presetId: string,
+  toolKeys: string[],
+  mode: PresetApplyMode
+) =>
+  invoke<void>("apply_preset_to_tools", { presetId, toolKeys, mode });
+
 export const addSkillToPreset = (skillId: string, presetId: string) =>
   invoke<void>("add_skill_to_preset", { skillId, presetId });
 

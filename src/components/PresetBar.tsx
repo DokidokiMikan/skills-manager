@@ -8,6 +8,8 @@ import { getPresetIconOption } from "../lib/presetIcons";
 import type { ManagedSkill, Preset } from "../lib/tauri";
 import { getErrorMessage } from "../lib/error";
 
+type PresetApplyMode = "add" | "remove";
+
 export interface PresetBarProps {
   presets: Preset[];
   managedSkills: ManagedSkill[];
@@ -15,6 +17,7 @@ export interface PresetBarProps {
   existsInWorkspace: (skill: ManagedSkill, agentKey: string) => boolean;
   onAddSkill: (skill: ManagedSkill, agentKey: string) => Promise<void>;
   onRemoveSkill: (skill: ManagedSkill, agentKey: string) => Promise<void>;
+  onApplyPreset?: (preset: Preset, mode: PresetApplyMode) => Promise<void>;
   onComplete: () => Promise<void>;
 }
 
@@ -25,6 +28,7 @@ export function PresetBar({
   existsInWorkspace,
   onAddSkill,
   onRemoveSkill,
+  onApplyPreset,
   onComplete,
 }: PresetBarProps) {
   const { t } = useTranslation();
@@ -47,10 +51,19 @@ export function PresetBar({
     setLoadingKey(`${preset.id}-add`);
     try {
       const presetSkills = managedSkills.filter((s) => s.preset_ids.includes(preset.id));
+      const missingPairs: Array<[ManagedSkill, string]> = [];
       let added = 0, skipped = 0, failed = 0;
       for (const skill of presetSkills) {
         for (const agentKey of agentKeys) {
           if (existsInWorkspace(skill, agentKey)) { skipped++; continue; }
+          missingPairs.push([skill, agentKey]);
+        }
+      }
+      if (onApplyPreset && missingPairs.length > 0) {
+        await onApplyPreset(preset, "add");
+        added = missingPairs.length;
+      } else {
+        for (const [skill, agentKey] of missingPairs) {
           try { await onAddSkill(skill, agentKey); added++; }
           catch { failed++; }
         }
@@ -67,16 +80,25 @@ export function PresetBar({
     } finally {
       setLoadingKey(null);
     }
-  }, [agentKeys, existsInWorkspace, managedSkills, onAddSkill, onComplete, t]);
+  }, [agentKeys, existsInWorkspace, managedSkills, onAddSkill, onApplyPreset, onComplete, t]);
 
   const handleDeactivate = useCallback(async (preset: Preset) => {
     setLoadingKey(`${preset.id}-remove`);
     try {
       const presetSkills = managedSkills.filter((s) => s.preset_ids.includes(preset.id));
+      const existingPairs: Array<[ManagedSkill, string]> = [];
       let removed = 0, failed = 0;
       for (const skill of presetSkills) {
         for (const agentKey of agentKeys) {
           if (!existsInWorkspace(skill, agentKey)) continue;
+          existingPairs.push([skill, agentKey]);
+        }
+      }
+      if (onApplyPreset && existingPairs.length > 0) {
+        await onApplyPreset(preset, "remove");
+        removed = existingPairs.length;
+      } else {
+        for (const [skill, agentKey] of existingPairs) {
           try { await onRemoveSkill(skill, agentKey); removed++; }
           catch { failed++; }
         }
@@ -93,7 +115,7 @@ export function PresetBar({
     } finally {
       setLoadingKey(null);
     }
-  }, [agentKeys, existsInWorkspace, managedSkills, onComplete, onRemoveSkill, t]);
+  }, [agentKeys, existsInWorkspace, managedSkills, onApplyPreset, onComplete, onRemoveSkill, t]);
 
   if (visiblePresets.length === 0) return null;
 

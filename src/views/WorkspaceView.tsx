@@ -26,7 +26,7 @@ import { DetailSheet } from "../components/DetailSheet";
 import { SkillMarkdown } from "../components/SkillMarkdown";
 import { DocumentDiffViewer } from "../components/DocumentDiffViewer";
 import * as api from "../lib/tauri";
-import type { ManagedSkill, ProjectSkill } from "../lib/tauri";
+import type { ManagedSkill, Preset, PresetApplyMode, ProjectSkill } from "../lib/tauri";
 import { getErrorMessage } from "../lib/error";
 import { getTagActiveColor, getTagColor, UNTAGGED_FILTER } from "../lib/skillTags";
 import { AddSkillsSheet } from "../components/AddSkillsSheet";
@@ -534,6 +534,13 @@ export function WorkspaceView({ config }: { config: WorkspaceConfig }) {
     await api.unsyncSkillFromTool(skill.id, agentK);
   }, []);
 
+  const handlePresetBatchApply = useCallback(
+    async (preset: Preset, mode: PresetApplyMode) => {
+      await api.applyPresetToTools(preset.id, presetBarAgentKeys, mode);
+    },
+    [presetBarAgentKeys]
+  );
+
   const handlePresetComplete = useCallback(async () => {
     await Promise.all([refreshManagedSkills(), refreshTools(), loadLocalSkills()]);
   }, [loadLocalSkills, refreshManagedSkills, refreshTools]);
@@ -674,6 +681,7 @@ export function WorkspaceView({ config }: { config: WorkspaceConfig }) {
               existsInWorkspace={existsInGlobal}
               onAddSkill={handlePresetAdd}
               onRemoveSkill={handlePresetRemove}
+              onApplyPreset={handlePresetBatchApply}
               onComplete={handlePresetComplete}
             />
           )}
@@ -859,6 +867,7 @@ export function WorkspaceView({ config }: { config: WorkspaceConfig }) {
             existsInWorkspace={existsInGlobal}
             onAddSkill={handlePresetAdd}
             onRemoveSkill={handlePresetRemove}
+            onApplyPreset={handlePresetBatchApply}
             onComplete={handlePresetComplete}
           />
         )}

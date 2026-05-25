@@ -1006,6 +1006,7 @@ pub fn run() {
             commands::presets::delete_preset,
             commands::presets::switch_preset,
             commands::presets::apply_preset_to_default,
+            commands::presets::apply_preset_to_tools,
             commands::presets::apply_preset_to_coding_agents,
             commands::presets::add_skill_to_preset,
             commands::presets::remove_skill_from_preset,
