@@ -25,9 +25,10 @@ pub(crate) fn ensure_dst_not_inside_src(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncMode {
     Symlink,
+    Junction,
     Copy,
 }
 
@@ -35,6 +36,7 @@ impl SyncMode {
     pub fn as_str(&self) -> &'static str {
         match self {
             SyncMode::Symlink => "symlink",
+            SyncMode::Junction => "junction",
             SyncMode::Copy => "copy",
         }
     }
@@ -43,6 +45,7 @@ impl SyncMode {
 pub fn sync_mode_for_tool(_tool_key: &str, configured_mode: Option<&str>) -> SyncMode {
     match configured_mode {
         Some("copy") => SyncMode::Copy,
+        Some("junction") => SyncMode::Junction,
         Some("symlink") => SyncMode::Symlink,
         _ => SyncMode::Symlink,
     }
@@ -79,27 +82,57 @@ pub fn sync_skill(source: &Path, target: &Path, mode: SyncMode) -> Result<SyncMo
         SyncMode::Symlink => {
             #[cfg(unix)]
             {
-                std::os::unix::fs::symlink(source, target).with_context(|| {
+                create_directory_symlink(source, target).with_context(|| {
                     format!("Failed to create symlink {:?} -> {:?}", target, source)
                 })?;
                 Ok(SyncMode::Symlink)
             }
             #[cfg(windows)]
             {
-                match std::os::windows::fs::symlink_dir(source, target) {
+                match create_directory_symlink(source, target) {
                     Ok(()) => Ok(SyncMode::Symlink),
-                    Err(err) => {
-                        // Typical causes: missing SeCreateSymbolicLinkPrivilege,
-                        // Developer Mode disabled, or non-NTFS target volume.
-                        log::warn!(
-                            "symlink_dir {:?} -> {:?} failed, falling back to copy: {err}",
-                            target,
-                            source
-                        );
-                        copy_dir_recursive(source, target)?;
-                        Ok(SyncMode::Copy)
-                    }
+                    Err(symlink_err) => match create_junction(source, target) {
+                        Ok(()) => {
+                            log::warn!(
+                                "symlink_dir {:?} -> {:?} failed, using junction fallback: {symlink_err}",
+                                target,
+                                source
+                            );
+                            Ok(SyncMode::Junction)
+                        }
+                        Err(junction_err) => {
+                            // Typical symlink causes: missing SeCreateSymbolicLinkPrivilege,
+                            // Developer Mode disabled, or non-NTFS target volume.
+                            log::warn!(
+                                "symlink_dir {:?} -> {:?} failed ({symlink_err}); junction fallback failed ({junction_err}); falling back to copy",
+                                target,
+                                source
+                            );
+                            let _ = remove_target(target);
+                            copy_dir_recursive(source, target)?;
+                            Ok(SyncMode::Copy)
+                        }
+                    },
                 }
+            }
+            #[cfg(all(not(unix), not(windows)))]
+            {
+                copy_dir_recursive(source, target)?;
+                Ok(SyncMode::Copy)
+            }
+        }
+        SyncMode::Junction => {
+            #[cfg(windows)]
+            {
+                create_junction(source, target)?;
+                Ok(SyncMode::Junction)
+            }
+            #[cfg(unix)]
+            {
+                create_directory_symlink(source, target).with_context(|| {
+                    format!("Failed to create symlink {:?} -> {:?}", target, source)
+                })?;
+                Ok(SyncMode::Symlink)
             }
             #[cfg(all(not(unix), not(windows)))]
             {
@@ -134,12 +167,31 @@ pub fn is_target_current(
 ) -> bool {
     match mode {
         SyncMode::Symlink => symlink_points_to(target, source),
+        SyncMode::Junction => junction_points_to(target, source),
         SyncMode::Copy => match (last_synced_source_hash, current_source_hash) {
             (Some(stored), Some(current)) if stored == current => {
                 std::fs::symlink_metadata(target).is_ok()
             }
             _ => false,
         },
+    }
+}
+
+fn create_directory_symlink(source: &Path, target: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(source, target)?;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_dir(source, target)?;
+        Ok(())
+    }
+    #[cfg(all(not(unix), not(windows)))]
+    {
+        let _ = (source, target);
+        anyhow::bail!("directory symlinks are unsupported on this platform");
     }
 }
 
@@ -173,12 +225,105 @@ fn symlink_points_to(target: &Path, source: &Path) -> bool {
     }
 }
 
+fn junction_points_to(target: &Path, source: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let Ok(metadata) = std::fs::symlink_metadata(target) else {
+            return false;
+        };
+        if metadata.file_type().is_symlink() || !is_windows_reparse_point(&metadata) {
+            return false;
+        }
+        match (target.canonicalize(), source.canonicalize()) {
+            (Ok(link), Ok(src)) => link == src,
+            _ => false,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (target, source);
+        false
+    }
+}
+
+#[cfg(windows)]
+fn create_junction(source: &Path, target: &Path) -> Result<()> {
+    let source_arg = windows_cmd_path(source);
+    let target_arg = windows_cmd_path(target);
+    let output = std::process::Command::new("cmd")
+        .arg("/C")
+        .arg("mklink")
+        .arg("/J")
+        .arg(&target_arg)
+        .arg(&source_arg)
+        .output()
+        .with_context(|| {
+            format!(
+                "Failed to start junction creation {:?} -> {:?}",
+                target, source
+            )
+        })?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if stderr.is_empty() { stdout } else { stderr };
+    if detail.is_empty() {
+        anyhow::bail!(
+            "Failed to create junction {:?} -> {:?}: {}",
+            target,
+            source,
+            output.status
+        );
+    }
+    anyhow::bail!(
+        "Failed to create junction {:?} -> {:?}: {}",
+        target,
+        source,
+        detail
+    );
+}
+
+#[cfg(windows)]
+fn windows_cmd_path(path: &Path) -> String {
+    path.as_os_str().to_string_lossy().replace('/', "\\")
+}
+
+#[cfg(windows)]
+fn is_windows_reparse_point(metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(windows)]
+fn is_windows_directory_like(metadata: &std::fs::Metadata, target: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+
+    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
+    target.is_dir() || metadata.file_attributes() & FILE_ATTRIBUTE_DIRECTORY != 0
+}
+
 pub fn remove_target(target: &Path) -> Result<()> {
     let metadata = match std::fs::symlink_metadata(target) {
         Ok(metadata) => metadata,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(err) => return Err(err.into()),
     };
+
+    #[cfg(windows)]
+    if is_windows_reparse_point(&metadata) {
+        if is_windows_directory_like(&metadata, target) {
+            std::fs::remove_dir(target)?;
+        } else {
+            std::fs::remove_file(target)?;
+        }
+        return Ok(());
+    }
 
     if metadata.file_type().is_symlink() {
         #[cfg(windows)]
@@ -261,6 +406,14 @@ mod tests {
     }
 
     #[test]
+    fn sync_mode_explicit_junction_is_supported() {
+        assert!(matches!(
+            sync_mode_for_tool("cursor", Some("junction")),
+            SyncMode::Junction
+        ));
+    }
+
+    #[test]
     fn sync_mode_unknown_config_falls_back_to_tool_default() {
         assert!(matches!(
             sync_mode_for_tool("cursor", Some("invalid")),
@@ -275,6 +428,7 @@ mod tests {
     #[test]
     fn sync_mode_as_str() {
         assert_eq!(SyncMode::Symlink.as_str(), "symlink");
+        assert_eq!(SyncMode::Junction.as_str(), "junction");
         assert_eq!(SyncMode::Copy.as_str(), "copy");
     }
 
@@ -322,7 +476,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn sync_skill_symlink_creates_symlink_on_windows() {
+    fn sync_skill_symlink_uses_directory_link_on_windows() {
         let tmp = tempdir().unwrap();
         let src = tmp.path().join("source");
         let tgt = tmp.path().join("target");
@@ -330,8 +484,9 @@ mod tests {
         fs::write(src.join("SKILL.md"), "# hello").unwrap();
 
         let mode = sync_skill(&src, &tgt, SyncMode::Symlink).unwrap();
-        assert!(matches!(mode, SyncMode::Symlink));
-        assert!(tgt.is_symlink());
+        assert_ne!(mode.as_str(), "copy");
+        assert_eq!(tgt.canonicalize().unwrap(), src.canonicalize().unwrap());
+        assert_eq!(fs::read_to_string(tgt.join("SKILL.md")).unwrap(), "# hello");
     }
 
     #[test]
@@ -495,12 +650,58 @@ mod tests {
         fs::create_dir_all(&real).unwrap();
         fs::write(real.join("SKILL.md"), "# hello").unwrap();
         let link = tmp.path().join("link");
-        std::os::windows::fs::symlink_dir(&real, &link).unwrap();
+        if let Err(err) = std::os::windows::fs::symlink_dir(&real, &link) {
+            if err.raw_os_error() == Some(1314) {
+                return;
+            }
+            panic!("failed to create directory symlink: {err}");
+        }
 
         remove_target(&link).unwrap();
         assert!(!link.exists());
         assert!(real.exists());
         assert!(real.join("SKILL.md").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn remove_target_removes_junction_without_deleting_source() {
+        let tmp = tempdir().unwrap();
+        let real = tmp.path().join("real");
+        fs::create_dir_all(&real).unwrap();
+        fs::write(real.join("SKILL.md"), "# hello").unwrap();
+        let link = tmp.path().join("link");
+        create_junction(&real, &link).unwrap();
+
+        remove_target(&link).unwrap();
+        assert!(!link.exists());
+        assert!(real.exists());
+        assert_eq!(
+            fs::read_to_string(real.join("SKILL.md")).unwrap(),
+            "# hello"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn create_junction_accepts_paths_with_forward_slashes() {
+        let tmp = tempdir().unwrap();
+        let real = tmp.path().join("sourceroot");
+        fs::create_dir_all(&real).unwrap();
+        fs::write(real.join("SKILL.md"), "# hello").unwrap();
+        let link = tmp.path().join("targetroot").join("skills").join("link");
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+
+        let real_with_forward_slashes = PathBuf::from(real.to_string_lossy().replace('\\', "/"));
+        let link_with_forward_slashes = PathBuf::from(link.to_string_lossy().replace('\\', "/"));
+
+        create_junction(&real_with_forward_slashes, &link_with_forward_slashes).unwrap();
+
+        assert_eq!(link.canonicalize().unwrap(), real.canonicalize().unwrap());
+        assert_eq!(
+            fs::read_to_string(link.join("SKILL.md")).unwrap(),
+            "# hello"
+        );
     }
 
     #[test]
