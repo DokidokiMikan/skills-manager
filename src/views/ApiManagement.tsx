@@ -729,6 +729,18 @@ export function ApiManagement() {
           </div>
         )}
 
+        <div className="flex gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-[13px] text-secondary">
+          <Cpu className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+          <div className="min-w-0">
+            <div className="font-medium text-primary">
+              {t("apiManagement.translationRecommendation.title")}
+            </div>
+            <p className="mt-1 leading-6 text-muted">
+              {t("apiManagement.translationRecommendation.description")}
+            </p>
+          </div>
+        </div>
+
         {error && (
           <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] text-red-400">
             {error}

@@ -177,6 +177,10 @@
       "translationFollowsDefault": "(follows default)",
       "translationBadge": "Translation"
     },
+    "translationRecommendation": {
+      "title": "Local translation models are recommended",
+      "description": "For Skill document translation, prefer local models through Ollama or LM Studio, such as Qwen3 4B, Gemma 3 4B, or Llama 3.2 3B/lightweight 7B. They run locally, avoid per-token billing, and reduce sending Skill content to third-party APIs."
+    },
     "modelLabels": {
       "unspecified": "Unspecified model",
       "specified": "{{model}}",
@@ -227,6 +231,27 @@
       "testCommandMissing": "API test command is missing. Restart the Tauri app."
     },
     "confirmDelete": "Delete API profile \"{{name}}\"?"
+  },
+  "translation": {
+    "common": {
+      "translating": "Translating...",
+      "continue": "Continue translation",
+      "showOriginal": "Show original",
+      "showTranslation": "Show translation",
+      "cancel": "Cancel",
+      "cancelTranslation": "Cancel translation",
+      "retranslate": "Retranslate",
+      "confirmRetranslate": "Confirm retranslation"
+    },
+    "body": {
+      "translate": "Translate body",
+      "progress": "Translating: {{current}} / {{total}} chunks",
+      "error": "Translation failed: {{error}}",
+      "cancelledPartial": "Translation cancelled; completed chunks were saved and can be continued",
+      "cancelled": "Translation cancelled",
+      "retranslateTitle": "Retranslate body",
+      "retranslateConfirm": "Retranslate the current body? Existing body translation will be overwritten, but the original Skill file will not be modified."
+    }
   },
   "dashboard": {
     "greeting": "Hello!",

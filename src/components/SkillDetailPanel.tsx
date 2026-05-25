@@ -22,6 +22,7 @@ import {
 import { DocumentDiffViewer } from "./DocumentDiffViewer";
 import { DetailSheet } from "./DetailSheet";
 import { SkillMarkdown } from "./SkillMarkdown";
+import { SkillTranslationControls, type TranslationRenderState } from "./SkillTranslationControls";
 import { AgentToggleSection, type AgentToggleItem } from "./AgentToggleSection";
 import { SkillProjectsSection } from "./SkillProjectsSection";
 import { SyncDots } from "./SyncDots";
@@ -282,11 +283,16 @@ function SkillDetailPanelContent({
     </>
   );
 
-  return (
+  const renderSheet = (translation?: TranslationRenderState) => {
+    const title = translation?.title ?? skill.name;
+    const description = translation?.description ?? skill.description;
+    const localContent = translation?.content ?? activeDoc?.content;
+
+    return (
     <DetailSheet
       open={true}
-      title={skill.name}
-      description={skill.description ? <p className="line-clamp-3">{skill.description}</p> : undefined}
+      title={title}
+      description={description ? <p className="line-clamp-3">{description}</p> : undefined}
       meta={meta}
       onClose={onClose}
     >
@@ -355,11 +361,29 @@ function SkillDetailPanelContent({
         ) : (
           <div className="mt-12 text-center text-[13px] text-muted">{t("mySkills.sourceDiffUnavailable")}</div>
         )
-      ) : activeDoc ? (
-        <SkillMarkdown content={activeDoc.content} />
+      ) : localContent ? (
+        <SkillMarkdown content={localContent} />
       ) : (
         <div className="mt-12 text-center text-[13px] text-muted">{t("common.documentMissing")}</div>
       )}
+      {translation?.toolbar}
     </DetailSheet>
-  );
+    );
+  };
+
+  if (!loading && contentTab === "local" && activeDoc) {
+    return (
+      <SkillTranslationControls
+        translationId={skill.id}
+        skillName={skill.name}
+        skillUpdatedAt={skill.updated_at}
+        description={skill.description}
+        content={activeDoc.content}
+      >
+        {(translation) => renderSheet(translation)}
+      </SkillTranslationControls>
+    );
+  }
+
+  return renderSheet();
 }

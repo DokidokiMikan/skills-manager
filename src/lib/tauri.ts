@@ -445,6 +445,67 @@ export const listApiModelsForConfig = (input: {
     request: input,
   });
 
+// ── Translation ──
+
+export interface SkillTranslation {
+  skillId: string;
+  skillName: string;
+  skillUpdatedAt: number;
+  sourceHash: string | null;
+  language: string;
+  title: string | null;
+  description: string | null;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export const translateText = (text: string, targetLang = "简体中文") =>
+  invoke<string>("translate_text", {
+    request: {
+      text,
+      targetLang,
+    },
+  });
+
+export const getSkillTranslation = (
+  skillId: string,
+  skillUpdatedAt: number,
+  sourceHash?: string | null,
+  languageCode = "zh-CN"
+) =>
+  invoke<SkillTranslation | null>("get_skill_translation", {
+    request: {
+      skillId,
+      skillUpdatedAt,
+      sourceHash: sourceHash ?? null,
+      language: languageCode,
+    },
+  });
+
+export const saveSkillTranslation = (
+  skillId: string,
+  skillName: string,
+  skillUpdatedAt: number,
+  sourceHash: string | null,
+  content: string,
+  title: string | null,
+  description: string | null,
+  languageCode = "zh-CN"
+) =>
+  invoke<SkillTranslation>("save_skill_translation", {
+    request: {
+      skillId,
+      skillName,
+      skillUpdatedAt,
+      sourceHash,
+      content,
+      title,
+      description,
+      language: languageCode,
+    },
+  });
+
 export const getCentralRepoPath = () =>
   invoke<string>("get_central_repo_path");
 

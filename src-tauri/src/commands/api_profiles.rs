@@ -170,6 +170,10 @@ fn read_profiles(store: &SkillStore) -> Result<Vec<ApiProfile>, String> {
     serde_json::from_str(&text).map_err(|err| format!("解析 API 配置失败：{err}"))
 }
 
+pub(crate) fn load_api_profiles(store: &SkillStore) -> Result<Vec<ApiProfile>, String> {
+    read_profiles(store)
+}
+
 fn write_profiles(store: &SkillStore, profiles: &[ApiProfile]) -> Result<(), String> {
     let text =
         serde_json::to_string_pretty(profiles).map_err(|err| format!("序列化 API 配置失败：{err}"))?;

@@ -177,6 +177,10 @@
       "translationFollowsDefault": "（跟隨預設）",
       "translationBadge": "翻譯"
     },
+    "translationRecommendation": {
+      "title": "推薦使用本地翻譯模型",
+      "description": "Skill 文件翻譯優先推薦 Ollama 或 LM Studio 本地模型，例如 Qwen3 4B、Gemma 3 4B 或 Llama 3.2 3B/輕量 7B。它們本地執行、沒有按量計費，也能減少把 Skill 內容傳送到第三方 API。"
+    },
     "modelLabels": {
       "unspecified": "未指定模型",
       "specified": "{{model}}",
@@ -227,6 +231,27 @@
       "testCommandMissing": "缺少 API 測試命令，請重啟 Tauri 應用。"
     },
     "confirmDelete": "刪除 API 設定「{{name}}」？"
+  },
+  "translation": {
+    "common": {
+      "translating": "翻譯中...",
+      "continue": "繼續翻譯",
+      "showOriginal": "顯示原文",
+      "showTranslation": "顯示譯文",
+      "cancel": "取消",
+      "cancelTranslation": "取消翻譯",
+      "retranslate": "重新翻譯",
+      "confirmRetranslate": "確認重新翻譯"
+    },
+    "body": {
+      "translate": "翻譯正文",
+      "progress": "翻譯中：{{current}} / {{total}} 段",
+      "error": "翻譯失敗：{{error}}",
+      "cancelledPartial": "已取消翻譯，已儲存已完成部分，可繼續翻譯",
+      "cancelled": "已取消翻譯",
+      "retranslateTitle": "重新翻譯正文",
+      "retranslateConfirm": "確定要重新翻譯目前正文嗎？已有正文翻譯會被覆蓋，但原始 Skill 檔案不會被修改。"
+    }
   },
   "dashboard": {
     "greeting": "你好！",

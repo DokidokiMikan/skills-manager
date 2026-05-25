@@ -100,6 +100,20 @@ pub struct ScenarioSkillToolToggleRecord {
     pub updated_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SkillTranslationRecord {
+    pub skill_id: String,
+    pub skill_name: String,
+    pub skill_updated_at: i64,
+    pub source_hash: Option<String>,
+    pub language: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub content: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 impl SkillStore {
     pub fn new(db_path: &PathBuf) -> Result<Self> {
         let conn = Connection::open(db_path)?;
@@ -662,6 +676,100 @@ impl SkillStore {
             params![key, stored],
         )?;
         Ok(())
+    }
+
+    // ── Skill Translations ──
+
+    pub fn get_skill_translation(
+        &self,
+        skill_id: &str,
+        skill_updated_at: i64,
+        source_hash: Option<&str>,
+        language: &str,
+    ) -> Result<Option<SkillTranslationRecord>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT skill_id, skill_name, skill_updated_at, source_hash, language, title, description, content, created_at, updated_at
+             FROM skill_translations
+             WHERE skill_id = ?1 AND language = ?2",
+        )?;
+        let mut rows = stmt.query_map(params![skill_id, language], map_skill_translation_row)?;
+        let Some(record) = rows.next().and_then(|r| r.ok()) else {
+            return Ok(None);
+        };
+
+        if translation_matches_request(&record, skill_updated_at, source_hash) {
+            Ok(Some(record))
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn save_skill_translation(
+        &self,
+        skill_id: &str,
+        skill_name: &str,
+        skill_updated_at: i64,
+        source_hash: Option<&str>,
+        language: &str,
+        title: Option<&str>,
+        description: Option<&str>,
+        content: &str,
+    ) -> Result<SkillTranslationRecord> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let now = chrono::Utc::now().timestamp();
+        let created_at = {
+            let mut stmt = tx.prepare(
+                "SELECT created_at FROM skill_translations WHERE skill_id = ?1 AND language = ?2",
+            )?;
+            let mut rows =
+                stmt.query_map(params![skill_id, language], |row| row.get::<_, i64>(0))?;
+            rows.next().and_then(|r| r.ok()).unwrap_or(now)
+        };
+        let record = SkillTranslationRecord {
+            skill_id: skill_id.to_string(),
+            skill_name: skill_name.to_string(),
+            skill_updated_at,
+            source_hash: source_hash
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            language: language.to_string(),
+            title: title
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            description: description
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            content: content.to_string(),
+            created_at,
+            updated_at: now,
+        };
+
+        tx.execute(
+            "INSERT OR REPLACE INTO skill_translations (
+                skill_id, language, skill_name, skill_updated_at, source_hash, title, description, content, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                &record.skill_id,
+                &record.language,
+                &record.skill_name,
+                record.skill_updated_at,
+                record.source_hash.as_deref(),
+                record.title.as_deref(),
+                record.description.as_deref(),
+                &record.content,
+                record.created_at,
+                record.updated_at,
+            ],
+        )?;
+        tx.commit()?;
+
+        Ok(record)
     }
 
     pub fn remap_tool_key_references(&self, old_key: &str, new_key: &str) -> Result<()> {
@@ -1363,4 +1471,40 @@ fn map_skill_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SkillRecord> {
         last_checked_at: row.get(17)?,
         last_check_error: row.get(18)?,
     })
+}
+
+fn map_skill_translation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SkillTranslationRecord> {
+    Ok(SkillTranslationRecord {
+        skill_id: row.get(0)?,
+        skill_name: row.get(1)?,
+        skill_updated_at: row.get(2)?,
+        source_hash: row.get(3)?,
+        language: row.get(4)?,
+        title: row.get(5)?,
+        description: row.get(6)?,
+        content: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
+
+fn translation_matches_request(
+    translation: &SkillTranslationRecord,
+    skill_updated_at: i64,
+    source_hash: Option<&str>,
+) -> bool {
+    if let Some(stored_hash) = translation
+        .source_hash
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return source_hash
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|requested_hash| requested_hash == stored_hash)
+            .unwrap_or(false);
+    }
+
+    translation.skill_updated_at == skill_updated_at
 }
