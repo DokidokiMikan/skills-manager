@@ -460,6 +460,35 @@ export interface SkillTranslation {
   updatedAt: number;
 }
 
+export interface SkillCardTranslation {
+  skillId: string;
+  skillName: string;
+  skillUpdatedAt: number | null;
+  sourceHash: string | null;
+  language: string;
+  translatedName: string;
+  translatedDescription: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TranslationApiConnectionStatus {
+  status: "ok" | "failed";
+  message: string;
+  profileId: string | null;
+  profileName: string | null;
+}
+
+export interface SaveSkillCardTranslationInput {
+  skillId: string;
+  skillName: string;
+  skillUpdatedAt?: number | null;
+  sourceHash?: string | null;
+  language?: string | null;
+  translatedName: string;
+  translatedDescription?: string | null;
+}
+
 export const translateText = (text: string, targetLang = "简体中文") =>
   invoke<string>("translate_text", {
     request: {
@@ -467,6 +496,9 @@ export const translateText = (text: string, targetLang = "简体中文") =>
       targetLang,
     },
   });
+
+export const checkTranslationApiConnection = () =>
+  invoke<TranslationApiConnectionStatus>("check_translation_api_connection");
 
 export const getSkillTranslation = (
   skillId: string,
@@ -510,6 +542,32 @@ export const deleteSkillTranslation = (skillId: string, languageCode = "zh-CN") 
   invoke<number>("delete_skill_translation", {
     request: {
       skillId,
+      language: languageCode,
+    },
+  });
+
+export const listSkillCardTranslations = (languageCode = "zh-CN") =>
+  invoke<SkillCardTranslation[]>("list_skill_card_translations", {
+    request: {
+      language: languageCode,
+    },
+  });
+
+export const saveSkillCardTranslation = (input: SaveSkillCardTranslationInput) =>
+  invoke<SkillCardTranslation>("save_skill_card_translation", {
+    request: {
+      ...input,
+      language: input.language ?? "zh-CN",
+      skillUpdatedAt: input.skillUpdatedAt ?? null,
+      sourceHash: input.sourceHash ?? null,
+      translatedDescription: input.translatedDescription ?? null,
+    },
+  });
+
+export const deleteSkillCardTranslations = (skillIds: string[], languageCode = "zh-CN") =>
+  invoke<number>("delete_skill_card_translations", {
+    request: {
+      skillIds,
       language: languageCode,
     },
   });

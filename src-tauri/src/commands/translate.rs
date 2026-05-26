@@ -17,6 +17,15 @@ pub struct TranslateTextRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslationApiConnectionStatus {
+    pub status: String,
+    pub message: String,
+    pub profile_id: Option<String>,
+    pub profile_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 struct OpenAiChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
@@ -188,6 +197,15 @@ fn get_translation_api_profile(store: &SkillStore) -> Result<ApiProfile, String>
     }
 
     Err("没有可用于翻译的 API。请先在 API 管理中启用默认 API，或指定翻译 API。".to_string())
+}
+
+fn failed_translation_api_status(message: String) -> TranslationApiConnectionStatus {
+    TranslationApiConnectionStatus {
+        status: "failed".to_string(),
+        message,
+        profile_id: None,
+        profile_name: None,
+    }
 }
 
 async fn resolve_model(profile: &ApiProfile) -> Result<String, String> {
@@ -443,6 +461,83 @@ async fn send_ollama_request(
     }
 
     Err(last_error.unwrap_or_else(|| "Ollama 请求失败，且没有返回具体错误".to_string()))
+}
+
+#[tauri::command]
+pub async fn check_translation_api_connection(
+    store: State<'_, Arc<SkillStore>>,
+) -> Result<TranslationApiConnectionStatus, String> {
+    let profile = match get_translation_api_profile(store.inner().as_ref()) {
+        Ok(profile) => profile,
+        Err(message) => return Ok(failed_translation_api_status(message)),
+    };
+
+    if profile.provider == "anthropic-compatible" {
+        return Ok(TranslationApiConnectionStatus {
+            status: "failed".to_string(),
+            message:
+                "Anthropic 兼容翻译请求还没接入，请先使用 OpenAI 兼容 / LM Studio API / llama.cpp / Ollama"
+                    .to_string(),
+            profile_id: Some(profile.id),
+            profile_name: Some(profile.name),
+        });
+    }
+
+    let url = if profile.provider == "ollama" {
+        build_ollama_tags_url(&profile.base_url)
+    } else if profile.provider == "lm-studio-api" || profile.provider == "lm-studio" {
+        let base = profile.base_url.trim_end_matches('/');
+        format!("{base}/api/v1/models")
+    } else if profile.provider == "openai-compatible" || profile.provider == "llama-cpp" {
+        build_openai_models_url(&profile.base_url)
+    } else {
+        return Ok(TranslationApiConnectionStatus {
+            status: "failed".to_string(),
+            message: format!("不支持的 API 协议：{}", profile.provider),
+            profile_id: Some(profile.id),
+            profile_name: Some(profile.name),
+        });
+    };
+
+    let client = build_client(5)?;
+    let mut request = client.get(&url);
+    if profile.provider != "ollama" {
+        if let Some(api_key) = profile
+            .api_key
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            request = request.bearer_auth(api_key);
+        }
+    }
+
+    let profile_id = Some(profile.id.clone());
+    let profile_name = Some(profile.name.clone());
+
+    match request.send().await {
+        Ok(response) if response.status().is_success() => Ok(TranslationApiConnectionStatus {
+            status: "ok".to_string(),
+            message: format!("{} 连接正常", profile.name),
+            profile_id,
+            profile_name,
+        }),
+        Ok(response) => {
+            let status = response.status();
+            let body = sanitize_message(response.text().await.unwrap_or_default());
+            Ok(TranslationApiConnectionStatus {
+                status: "failed".to_string(),
+                message: format!("{} 连接失败：{status} {body}", profile.name),
+                profile_id,
+                profile_name,
+            })
+        }
+        Err(err) => Ok(TranslationApiConnectionStatus {
+            status: "failed".to_string(),
+            message: format!("{} 连接失败：{}", profile.name, sanitize_message(err.to_string())),
+            profile_id,
+            profile_name,
+        }),
+    }
 }
 
 #[tauri::command]

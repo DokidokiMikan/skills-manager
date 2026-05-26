@@ -31,6 +31,7 @@ import { useMultiSelect } from "../hooks/useMultiSelect";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DeleteSkillButton } from "../components/DeleteSkillButton";
 import { SkillDetailPanel } from "../components/SkillDetailPanel";
+import { useSkillCardTranslations } from "../components/SkillCardTranslationControls";
 import { MultiSelectToolbar } from "../components/MultiSelectToolbar";
 import { BatchTagDialog } from "../components/BatchTagDialog";
 import { GitSetupDialog } from "../components/GitSetupDialog";
@@ -221,15 +222,8 @@ export function MySkills() {
     return displayNames;
   }, [skills]);
 
-  const filtered = useMemo(() => {
+  const filteredBase = useMemo(() => {
     const result = skills.filter((skill) => {
-      const displayName = skillDisplayNames.get(skill.id) || skill.name;
-      const matchesSearch =
-        skill.name.toLowerCase().includes(search.toLowerCase()) ||
-        displayName.toLowerCase().includes(search.toLowerCase()) ||
-        (skill.description || "").toLowerCase().includes(search.toLowerCase());
-      if (!matchesSearch) return false;
-
       if (sourceFilters.size > 0 && !sourceFilters.has(skill.source_type)) return false;
 
       if (tagFilters.size > 0) {
@@ -264,7 +258,65 @@ export function MySkills() {
     }
 
     return result;
-  }, [skills, skillDisplayNames, search, sourceFilters, tagFilters, filterMode, viewedPreset, presetSkillOrder]);
+  }, [skills, sourceFilters, tagFilters, filterMode, viewedPreset, presetSkillOrder]);
+
+  const getSkillCardTranslationItem = useCallback(
+    (skill: ManagedSkill) => ({
+      id: skill.id,
+      name: skillDisplayNames.get(skill.id) || skill.name,
+      description: skill.description,
+      updatedAt: skill.updated_at,
+    }),
+    [skillDisplayNames]
+  );
+
+  const cardTranslationItems = useMemo(
+    () => filteredBase.map(getSkillCardTranslationItem),
+    [filteredBase, getSkillCardTranslationItem]
+  );
+  const skillCardTranslations = useSkillCardTranslations(cardTranslationItems);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const result = filteredBase.filter((skill) => {
+      if (!q) return true;
+      const displayName = skillDisplayNames.get(skill.id) || skill.name;
+      const translationItem = getSkillCardTranslationItem(skill);
+      const searchText = skillCardTranslations.getSearchText(translationItem);
+      return (
+        skill.name.toLowerCase().includes(q) ||
+        displayName.toLowerCase().includes(q) ||
+        (skill.description || "").toLowerCase().includes(q) ||
+        searchText.includes(q)
+      );
+    });
+
+    // Always sort enabled skills first; within enabled group, use custom sort order
+    if (viewedPreset) {
+      result.sort((a, b) => {
+        const aEnabled = a.preset_ids.includes(viewedPreset.id) ? 0 : 1;
+        const bEnabled = b.preset_ids.includes(viewedPreset.id) ? 0 : 1;
+        if (aEnabled !== bEnabled) return aEnabled - bEnabled;
+        // Within same group, use preset sort order
+        const aOrder = presetSkillOrder.indexOf(a.id);
+        const bOrder = presetSkillOrder.indexOf(b.id);
+        if (aOrder !== -1 && bOrder !== -1) return aOrder - bOrder;
+        if (aOrder !== -1) return -1;
+        if (bOrder !== -1) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    return result;
+  }, [
+    filteredBase,
+    getSkillCardTranslationItem,
+    presetSkillOrder,
+    search,
+    skillCardTranslations,
+    skillDisplayNames,
+    viewedPreset,
+  ]);
 
   const {
     isMultiSelect, setIsMultiSelect,
@@ -1502,7 +1554,15 @@ export function MySkills() {
             const isMissingLocalSource =
               skill.update_status === "source_missing"
               && (skill.source_type === "local" || skill.source_type === "import");
-            const displayName = skillDisplayNames.get(skill.id) || skill.name;
+            const originalDisplayName = skillDisplayNames.get(skill.id) || skill.name;
+            const translatedCard = skillCardTranslations.getTranslatedCard({
+              id: skill.id,
+              name: originalDisplayName,
+              description: skill.description,
+              updatedAt: skill.updated_at,
+            });
+            const displayName = translatedCard.name;
+            const displayDescription = translatedCard.description;
 
             if (viewMode === "grid") {
               return (
@@ -1571,7 +1631,7 @@ export function MySkills() {
 
                   <div className="px-3.5 pb-3">
                     <p className="text-[13px] leading-[18px] text-muted truncate">
-                      {skill.description || "—"}
+                      {displayDescription || "—"}
                     </p>
                     {badge && (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -1753,7 +1813,7 @@ export function MySkills() {
                 </h3>
 
                 <p className="min-w-0 flex-1 truncate text-[13px] text-muted">
-                  {skill.description || "—"}
+                  {displayDescription || "—"}
                 </p>
 
                 <div className="flex shrink-0 items-center gap-1.5">
@@ -1868,6 +1928,8 @@ export function MySkills() {
           </SortableContext>
         </DndContext>
       )}
+
+      {!selectedSkill && skillCardTranslations.controls}
 
       <SkillDetailPanel
         key={selectedSkill?.id ?? "skill-detail-empty"}

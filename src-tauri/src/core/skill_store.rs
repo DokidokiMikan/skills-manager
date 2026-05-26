@@ -114,6 +114,19 @@ pub struct SkillTranslationRecord {
     pub updated_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SkillCardTranslationRecord {
+    pub skill_id: String,
+    pub skill_name: String,
+    pub skill_updated_at: Option<i64>,
+    pub source_hash: Option<String>,
+    pub language: String,
+    pub translated_name: String,
+    pub translated_description: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 impl SkillStore {
     pub fn new(db_path: &PathBuf) -> Result<Self> {
         let conn = Connection::open(db_path)?;
@@ -778,6 +791,107 @@ impl SkillStore {
             "DELETE FROM skill_translations WHERE skill_id = ?1 AND language = ?2",
             params![skill_id, language],
         )?;
+        Ok(changed)
+    }
+
+    // ── Skill Card Translations ──
+
+    pub fn list_skill_card_translations(
+        &self,
+        language: &str,
+    ) -> Result<Vec<SkillCardTranslationRecord>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT skill_id, skill_name, skill_updated_at, source_hash, language, translated_name, translated_description, created_at, updated_at
+             FROM skill_card_translations
+             WHERE language = ?1
+             ORDER BY skill_name",
+        )?;
+        let rows = stmt.query_map(params![language], map_skill_card_translation_row)?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn save_skill_card_translation(
+        &self,
+        skill_id: &str,
+        skill_name: &str,
+        skill_updated_at: Option<i64>,
+        source_hash: Option<&str>,
+        language: &str,
+        translated_name: &str,
+        translated_description: Option<&str>,
+    ) -> Result<SkillCardTranslationRecord> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let now = chrono::Utc::now().timestamp();
+        let created_at = {
+            let mut stmt = tx.prepare(
+                "SELECT created_at FROM skill_card_translations WHERE skill_id = ?1 AND language = ?2",
+            )?;
+            let mut rows =
+                stmt.query_map(params![skill_id, language], |row| row.get::<_, i64>(0))?;
+            rows.next().and_then(|r| r.ok()).unwrap_or(now)
+        };
+        let record = SkillCardTranslationRecord {
+            skill_id: skill_id.trim().to_string(),
+            skill_name: skill_name.trim().to_string(),
+            skill_updated_at,
+            source_hash: source_hash
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            language: language.to_string(),
+            translated_name: translated_name.trim().to_string(),
+            translated_description: translated_description
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            created_at,
+            updated_at: now,
+        };
+
+        tx.execute(
+            "INSERT OR REPLACE INTO skill_card_translations (
+                skill_id, language, skill_name, skill_updated_at, source_hash, translated_name, translated_description, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                &record.skill_id,
+                &record.language,
+                &record.skill_name,
+                record.skill_updated_at,
+                record.source_hash.as_deref(),
+                &record.translated_name,
+                record.translated_description.as_deref(),
+                record.created_at,
+                record.updated_at,
+            ],
+        )?;
+        tx.commit()?;
+
+        Ok(record)
+    }
+
+    pub fn delete_skill_card_translations(
+        &self,
+        skill_ids: &[String],
+        language: &str,
+    ) -> Result<usize> {
+        if skill_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let mut changed = 0usize;
+
+        for skill_id in skill_ids {
+            changed += tx.execute(
+                "DELETE FROM skill_card_translations WHERE skill_id = ?1 AND language = ?2",
+                params![skill_id, language],
+            )?;
+        }
+
+        tx.commit()?;
         Ok(changed)
     }
 
@@ -1494,6 +1608,22 @@ fn map_skill_translation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SkillT
         content: row.get(7)?,
         created_at: row.get(8)?,
         updated_at: row.get(9)?,
+    })
+}
+
+fn map_skill_card_translation_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<SkillCardTranslationRecord> {
+    Ok(SkillCardTranslationRecord {
+        skill_id: row.get(0)?,
+        skill_name: row.get(1)?,
+        skill_updated_at: row.get(2)?,
+        source_hash: row.get(3)?,
+        language: row.get(4)?,
+        translated_name: row.get(5)?,
+        translated_description: row.get(6)?,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
     })
 }
 

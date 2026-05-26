@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use rusqlite::Connection;
 
 /// Current schema version. Bump this when adding a new migration.
-const LATEST_VERSION: u32 = 7;
+const LATEST_VERSION: u32 = 9;
 
 /// Run all pending migrations on the database.
 ///
@@ -54,6 +54,8 @@ fn migrate_step(conn: &Connection, from_version: u32) -> Result<()> {
         4 => migrate_v4_to_v5(conn),
         5 => migrate_v5_to_v6(conn),
         6 => migrate_v6_to_v7(conn),
+        7 => migrate_v7_to_v8(conn),
+        8 => migrate_v8_to_v9(conn),
         _ => bail!("unknown migration version: {from_version}"),
     }
 }
@@ -299,6 +301,34 @@ fn migrate_v6_to_v7(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// v7 -> v8: Add cached Skill card title/description translations.
+fn migrate_v7_to_v8(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS skill_card_translations (
+            skill_id TEXT NOT NULL,
+            language TEXT NOT NULL,
+            skill_name TEXT NOT NULL,
+            skill_updated_at INTEGER,
+            translated_name TEXT NOT NULL,
+            translated_description TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(skill_id, language)
+        );
+        CREATE INDEX IF NOT EXISTS idx_skill_card_translations_language ON skill_card_translations(language);
+        ",
+    )?;
+    Ok(())
+}
+
+/// v8 -> v9: Add a source hash so cached Skill card translations can
+/// detect content changes even when `updated_at` is unavailable.
+fn migrate_v8_to_v9(conn: &Connection) -> Result<()> {
+    add_column_if_missing(conn, "skill_card_translations", "source_hash", "TEXT")?;
+    Ok(())
+}
+
 // ── Helpers ──
 
 fn add_column_if_missing(
@@ -368,6 +398,7 @@ mod tests {
         assert!(tables.contains(&"scenario_skill_tools".to_string()));
         assert!(tables.contains(&"audit_log".to_string()));
         assert!(tables.contains(&"skill_translations".to_string()));
+        assert!(tables.contains(&"skill_card_translations".to_string()));
     }
 
     #[test]

@@ -235,6 +235,7 @@
   "translation": {
     "common": {
       "translating": "翻译中...",
+      "checkingApi": "检测 API...",
       "translated": "已翻译",
       "continue": "继续翻译",
       "retryChunk": "重试当前段",
@@ -259,6 +260,19 @@
       "clearCacheConfirm": "确定清除当前 Skill 的已保存译文吗？原始 Skill 文件不会被修改。",
       "retranslateTitle": "重新翻译正文",
       "retranslateConfirm": "确定要重新翻译当前正文吗？已有正文翻译会被覆盖，但原始 Skill 文件不会被修改。"
+    },
+    "cards": {
+      "translate": "翻译卡片",
+      "translated": "卡片已翻译",
+      "progress": "正在翻译卡片 {{current}} / {{total}}",
+      "done": "卡片翻译已完成",
+      "partialFailed": "卡片翻译已完成，但有 {{count}} 项失败，可重试失败项",
+      "error": "卡片翻译失败：{{error}}",
+      "cancelledPartial": "已取消卡片翻译，已保存完成部分",
+      "cancelled": "已取消卡片翻译",
+      "retryFailed": "重试失败卡片",
+      "retranslateTitle": "重新翻译卡片",
+      "retranslateConfirm": "确定要重新翻译当前列表的卡片标题和简介吗？已有卡片译文会被覆盖，但原始 Skill 不会被修改。"
     }
   },
   "dashboard": {

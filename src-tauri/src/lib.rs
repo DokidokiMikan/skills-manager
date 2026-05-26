@@ -973,10 +973,14 @@ pub fn run() {
             commands::api_profiles::list_api_profile_models,
             commands::api_profiles::list_api_models_for_config,
             // Translation
+            commands::translate::check_translation_api_connection,
             commands::translate::translate_text,
             commands::translations::get_skill_translation,
             commands::translations::save_skill_translation,
             commands::translations::delete_skill_translation,
+            commands::skill_card_translations::list_skill_card_translations,
+            commands::skill_card_translations::save_skill_card_translation,
+            commands::skill_card_translations::delete_skill_card_translations,
             // Git Backup
             commands::git_backup::git_backup_fetch,
             commands::git_backup::git_backup_status,

@@ -31,6 +31,8 @@ import { AgentToggleSection, type AgentToggleItem } from "../components/AgentTog
 import { ProjectAgentDots } from "../components/ProjectAgentDots";
 import { PresetBar } from "../components/PresetBar";
 import { SkillMarkdown } from "../components/SkillMarkdown";
+import { SkillTranslationControls } from "../components/SkillTranslationControls";
+import { useSkillCardTranslations } from "../components/SkillCardTranslationControls";
 import { DocumentDiffViewer } from "../components/DocumentDiffViewer";
 import { getTagActiveColor, getTagColor, UNTAGGED_FILTER } from "../lib/skillTags";
 import { cn } from "../utils";
@@ -295,12 +297,8 @@ export function ProjectDetail() {
     }
   }, [detailSkill, groupedSkills]);
 
-  const filtered = useMemo(() => {
+  const filteredBase = useMemo(() => {
     return groupedSkills.filter((skill) => {
-      const matchesSearch =
-        skill.name.toLowerCase().includes(search.toLowerCase()) ||
-        (skill.description || "").toLowerCase().includes(search.toLowerCase());
-      if (!matchesSearch) return false;
       if (tagFilters.size > 0) {
         const wantUntagged = tagFilters.has(UNTAGGED_FILTER);
         const matchUntagged = wantUntagged && skill.tags.length === 0;
@@ -311,7 +309,53 @@ export function ProjectDetail() {
       if (filterMode === "disabled") return skill.enabledCount === 0;
       return true;
     });
-  }, [groupedSkills, search, filterMode, tagFilters]);
+  }, [groupedSkills, filterMode, tagFilters]);
+
+  const managedSkillById = useMemo(
+    () => new Map(managedSkills.map((skill) => [skill.id, skill])),
+    [managedSkills]
+  );
+
+  const getProjectCardTranslationItem = useCallback(
+    (skill: ProjectSkillGroup) => {
+      const centerSkillId = skill.centerSkillIds[0] ?? null;
+      const centerSkill = centerSkillId
+        ? managedSkillById.get(centerSkillId) ?? null
+        : null;
+
+      return {
+        id: centerSkill?.id ?? `project-card:${id ?? "unknown"}:${skill.relative_path}`,
+        name: skill.name,
+        description: skill.description,
+        updatedAt: centerSkill?.updated_at ?? null,
+      };
+    },
+    [id, managedSkillById]
+  );
+
+  const projectCardTranslationItems = useMemo(
+    () => filteredBase.map(getProjectCardTranslationItem),
+    [filteredBase, getProjectCardTranslationItem]
+  );
+
+  const projectCardTranslations = useSkillCardTranslations(projectCardTranslationItems, {
+    disabled: Boolean(detailSkill),
+  });
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return filteredBase;
+
+    return filteredBase.filter((skill) => {
+      const translationItem = getProjectCardTranslationItem(skill);
+      const searchText = projectCardTranslations.getSearchText(translationItem);
+      return (
+        skill.name.toLowerCase().includes(q) ||
+        (skill.description || "").toLowerCase().includes(q) ||
+        searchText.includes(q)
+      );
+    });
+  }, [filteredBase, getProjectCardTranslationItem, projectCardTranslations, search]);
 
   const {
     isMultiSelect, setIsMultiSelect,
@@ -1079,6 +1123,8 @@ export function ProjectDetail() {
               skill.status === "diverged";
             const statusMeta = getSyncStatusMeta(t, skill.status);
             const assignedAgents = getAssignedAgents(skill.variants);
+            const cardTranslationItem = getProjectCardTranslationItem(skill);
+            const translatedCard = projectCardTranslations.getTranslatedCard(cardTranslationItem);
 
             if (viewMode === "grid") {
               return (
@@ -1102,9 +1148,9 @@ export function ProjectDetail() {
                     )}
                     <h3
                       className="flex-1 truncate text-[14px] font-semibold text-primary"
-                      title={skill.name}
+                      title={translatedCard.name}
                     >
-                      {skill.name}
+                      {translatedCard.name}
                     </h3>
                     {skill.files.length > 0 && (
                       <span className="flex items-center gap-1 text-[12px] text-faint shrink-0">
@@ -1116,7 +1162,7 @@ export function ProjectDetail() {
 
                   <div className="px-3.5 pb-3">
                     <p className="text-[13px] leading-[18px] text-muted truncate">
-                      {skill.description || "\u2014"}
+                      {translatedCard.description || "\u2014"}
                     </p>
                     {skill.tags.length > 0 && (
                       <div className="mt-2 flex flex-wrap items-center gap-1">
@@ -1249,13 +1295,13 @@ export function ProjectDetail() {
                 )}
                 <h3
                   className="w-[180px] shrink-0 truncate text-[14px] font-semibold text-secondary"
-                  title={skill.name}
+                  title={translatedCard.name}
                 >
-                  {skill.name}
+                  {translatedCard.name}
                 </h3>
 
                 <p className="min-w-0 flex-1 truncate text-[13px] text-muted">
-                  {skill.description || "\u2014"}
+                  {translatedCard.description || "\u2014"}
                 </p>
 
                 {skill.tags.length > 0 && (
@@ -1380,6 +1426,8 @@ export function ProjectDetail() {
         </div>
       )}
 
+      {!detailSkill && projectCardTranslations.controls}
+
       {/* Skill Document Detail Panel */}
       {detailSkill && project && (
         <ProjectSkillDetailPanel
@@ -1475,6 +1523,13 @@ function ProjectSkillDetailPanel({
   const { t } = useTranslation();
   const [contentTab, setContentTab] = useState<"local" | "diff" | "center">("local");
   const supportsCenterDiff = skill.centerSkillIds.length > 0;
+  const translationContent =
+    contentTab === "center"
+      ? centerDocContent ?? ""
+      : contentTab === "local"
+        ? docContent ?? ""
+        : "";
+  const translationId = `project:${skill.primaryVariant.agent}:${contentTab}:${skill.relative_path}`;
   const toggleItems: AgentToggleItem[] = targets.map((target) => {
     const variant = skill.variants.find((item) => item.agent === target.key);
     return {
@@ -1535,68 +1590,81 @@ function ProjectSkillDetailPanel({
   );
 
   return (
-    <DetailSheet
-      open={true}
-      title={skill.name}
-      description={skill.description ? <p className="line-clamp-3">{skill.description}</p> : undefined}
-      meta={meta}
-      onClose={onClose}
+    <SkillTranslationControls
+      translationId={translationId}
+      skillName={skill.name}
+      skillUpdatedAt={0}
+      description={skill.description}
+      content={translationContent}
+      disabled={contentTab === "diff" || !translationContent}
     >
-      <AgentToggleSection
-        items={toggleItems}
-        togglingKey={togglingAgent}
-        onToggle={onToggleAgent}
-        className="mb-4"
-      />
+      {({ title, description, content, toolbar }) => (
+        <DetailSheet
+          open={true}
+          title={title}
+          description={description ? <p className="line-clamp-3">{description}</p> : undefined}
+          meta={meta}
+          onClose={onClose}
+        >
+          <AgentToggleSection
+            items={toggleItems}
+            togglingKey={togglingAgent}
+            onToggle={onToggleAgent}
+            className="mb-4"
+          />
 
-      {supportsCenterDiff && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          {(["local", "diff", "center"] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setContentTab(tab)}
-              className={cn(
-                "rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors",
-                contentTab === tab
-                  ? "bg-accent text-white"
-                  : "bg-surface-hover text-muted hover:text-secondary"
-              )}
-              disabled={(tab === "diff" || tab === "center") && centerDocLoading}
-            >
-              {tab === "local"
-                ? t("mySkills.docTabs.local")
-                : tab === "diff"
-                  ? t("mySkills.docTabs.diff")
-                  : t("project.docTabs.center")}
-            </button>
-          ))}
-        </div>
-      )}
+          {supportsCenterDiff && (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              {(["local", "diff", "center"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setContentTab(tab)}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors",
+                    contentTab === tab
+                      ? "bg-accent text-white"
+                      : "bg-surface-hover text-muted hover:text-secondary"
+                  )}
+                  disabled={(tab === "diff" || tab === "center") && centerDocLoading}
+                >
+                  {tab === "local"
+                    ? t("mySkills.docTabs.local")
+                    : tab === "diff"
+                      ? t("mySkills.docTabs.diff")
+                      : t("project.docTabs.center")}
+                </button>
+              ))}
+            </div>
+          )}
 
-      {docLoading ? (
-        <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
-      ) : contentTab === "diff" ? (
-        docContent && centerDocContent ? (
-          <DocumentDiffViewer original={docContent} updated={centerDocContent} />
-        ) : centerDocLoading ? (
-          <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
-        ) : (
-          <div className="mt-12 text-center text-[13px] text-muted">{t("mySkills.sourceDiffUnavailable")}</div>
-        )
-      ) : contentTab === "center" ? (
-        centerDocLoading ? (
-          <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
-        ) : centerDocContent ? (
-          <SkillMarkdown content={centerDocContent} />
-        ) : (
-          <div className="mt-12 text-center text-[13px] text-muted">{t("mySkills.sourceDiffUnavailable")}</div>
-        )
-      ) : docContent ? (
-        <SkillMarkdown content={docContent} />
-      ) : (
-        <div className="mt-12 text-center text-[13px] text-muted">{t("common.documentMissing")}</div>
+          {contentTab !== "diff" && toolbar}
+
+          {docLoading ? (
+            <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
+          ) : contentTab === "diff" ? (
+            docContent && centerDocContent ? (
+              <DocumentDiffViewer original={docContent} updated={centerDocContent} />
+            ) : centerDocLoading ? (
+              <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
+            ) : (
+              <div className="mt-12 text-center text-[13px] text-muted">{t("mySkills.sourceDiffUnavailable")}</div>
+            )
+          ) : contentTab === "center" ? (
+            centerDocLoading ? (
+              <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
+            ) : centerDocContent ? (
+              <SkillMarkdown content={content} />
+            ) : (
+              <div className="mt-12 text-center text-[13px] text-muted">{t("mySkills.sourceDiffUnavailable")}</div>
+            )
+          ) : docContent ? (
+            <SkillMarkdown content={content} />
+          ) : (
+            <div className="mt-12 text-center text-[13px] text-muted">{t("common.documentMissing")}</div>
+          )}
+        </DetailSheet>
       )}
-    </DetailSheet>
+    </SkillTranslationControls>
   );
 }

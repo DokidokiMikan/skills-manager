@@ -24,6 +24,8 @@ import { PresetBar } from "../components/PresetBar";
 import { AgentIcon } from "../components/AgentIcon";
 import { DetailSheet } from "../components/DetailSheet";
 import { SkillMarkdown } from "../components/SkillMarkdown";
+import { SkillTranslationControls } from "../components/SkillTranslationControls";
+import { useSkillCardTranslations } from "../components/SkillCardTranslationControls";
 import { DocumentDiffViewer } from "../components/DocumentDiffViewer";
 import * as api from "../lib/tauri";
 import type { ManagedSkill, Preset, PresetApplyMode, ProjectSkill } from "../lib/tauri";
@@ -355,17 +357,9 @@ export function WorkspaceView({ config }: { config: WorkspaceConfig }) {
     return Array.from(tags).sort((a, b) => a.localeCompare(b));
   }, [localSkills]);
 
-  const visibleLocalSkills = useMemo(() => {
-    const q = search.trim().toLowerCase();
+  const visibleLocalSkillsBase = useMemo(() => {
     return localSkills
       .filter((skill) => {
-        if (q) {
-          const matchesQuery =
-            skill.name.toLowerCase().includes(q) ||
-            skill.dir_name.toLowerCase().includes(q) ||
-            (skill.description || "").toLowerCase().includes(q);
-          if (!matchesQuery) return false;
-        }
         if (tagFilters.size > 0) {
           const wantUntagged = tagFilters.has(UNTAGGED_FILTER);
           const matchUntagged = wantUntagged && skill.tags.length === 0;
@@ -387,7 +381,53 @@ export function WorkspaceView({ config }: { config: WorkspaceConfig }) {
           a.name.localeCompare(b.name)
         );
       });
-  }, [localSkills, search, tagFilters]);
+  }, [localSkills, tagFilters]);
+
+  const managedSkillById = useMemo(
+    () => new Map(managedSkills.map((skill) => [skill.id, skill])),
+    [managedSkills]
+  );
+
+  const getLocalCardTranslationItem = useCallback(
+    (skill: ProjectSkill) => {
+      const centerSkill = skill.center_skill_id
+        ? managedSkillById.get(skill.center_skill_id) ?? null
+        : null;
+
+      return {
+        id: centerSkill?.id ?? `global-card:${skill.agent}:${skill.relative_path}`,
+        name: skill.name,
+        description: skill.description,
+        updatedAt: centerSkill?.updated_at ?? null,
+      };
+    },
+    [managedSkillById]
+  );
+
+  const localCardTranslationItems = useMemo(
+    () => visibleLocalSkillsBase.map(getLocalCardTranslationItem),
+    [getLocalCardTranslationItem, visibleLocalSkillsBase]
+  );
+
+  const localCardTranslations = useSkillCardTranslations(localCardTranslationItems, {
+    disabled: Boolean(localDetailSkill),
+  });
+
+  const visibleLocalSkills = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return visibleLocalSkillsBase;
+
+    return visibleLocalSkillsBase.filter((skill) => {
+      const translationItem = getLocalCardTranslationItem(skill);
+      const searchText = localCardTranslations.getSearchText(translationItem);
+      return (
+        skill.name.toLowerCase().includes(q) ||
+        skill.dir_name.toLowerCase().includes(q) ||
+        (skill.description || "").toLowerCase().includes(q) ||
+        searchText.includes(q)
+      );
+    });
+  }, [getLocalCardTranslationItem, localCardTranslations, search, visibleLocalSkillsBase]);
 
   const inSyncLocalCount = useMemo(
     () => localSkills.filter((skill) => skill.sync_status === "in_sync").length,
@@ -654,6 +694,18 @@ export function WorkspaceView({ config }: { config: WorkspaceConfig }) {
       </>
     );
   };
+
+  const localDetailTranslationContent =
+    localContentTab === "center"
+      ? localCenterDocContent || ""
+      : localContentTab === "local"
+        ? localDocContent || ""
+        : "";
+
+  const localDetailTranslationId =
+    localDetailSkill && currentTool
+      ? `global:${currentTool.key}:${localContentTab}:${localDetailSkill.relative_path}`
+      : "";
 
   if (redirectTarget) {
     return <Navigate to={redirectTarget} replace />;
@@ -924,13 +976,15 @@ export function WorkspaceView({ config }: { config: WorkspaceConfig }) {
           {visibleLocalSkills.map((skill) => {
             const statusMeta = getLocalStatusMeta(t, skill.sync_status);
             const isManaged = !!skill.center_skill_id && managedLocalIds.has(skill.center_skill_id);
+            const cardTranslationItem = getLocalCardTranslationItem(skill);
+            const translatedCard = localCardTranslations.getTranslatedCard(cardTranslationItem);
 
             return (
               <WorkspaceSkillCard
                 key={`${skill.agent}:${skill.relative_path}`}
                 viewMode={viewMode}
-                title={skill.name}
-                description={skill.description || skill.relative_path}
+                title={translatedCard.name}
+                description={translatedCard.description || skill.relative_path}
                 tags={skill.tags.map((tag) => ({ label: tag, className: getTagColor(tag, allLocalTags) }))}
                 status={statusMeta}
                 fileCount={skill.files.length}
@@ -959,73 +1013,88 @@ export function WorkspaceView({ config }: { config: WorkspaceConfig }) {
         />
       )}
 
-      <DetailSheet
-        open={!!localDetailSkill}
-        title={localDetailSkill?.name ?? ""}
-        description={localDetailSkill?.description}
-        meta={
-          localDetailSkill ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={cn("rounded-full px-2.5 py-1 text-[12px] font-medium", getLocalStatusMeta(t, localDetailSkill.sync_status).className)}>
-                {getLocalStatusMeta(t, localDetailSkill.sync_status).label}
-              </span>
-              <span className="rounded-full bg-surface-hover px-2.5 py-1 text-[12px] text-muted">
-                {localDetailSkill.relative_path}
-              </span>
-            </div>
-          ) : null
-        }
-        onClose={() => setLocalDetailSkill(null)}
-      >
-        {localDetailSkill?.center_skill_id && (
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            {(["local", "diff", "center"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setLocalContentTab(tab)}
-                className={cn(
-                  "rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors",
-                  localContentTab === tab
-                    ? "bg-accent text-white"
-                    : "bg-surface-hover text-muted hover:text-secondary"
-                )}
-                disabled={(tab === "diff" || tab === "center") && localCenterDocLoading}
-              >
-                {tab === "local"
-                  ? t("mySkills.docTabs.local")
-                  : tab === "diff"
-                    ? t("mySkills.docTabs.diff")
-                    : t("project.docTabs.center")}
-              </button>
-            ))}
-          </div>
-        )}
+      {!localDetailSkill && localCardTranslations.controls}
 
-        {localDocLoading ? (
-          <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
-        ) : localContentTab === "diff" ? (
-          localDocContent && localCenterDocContent ? (
-            <DocumentDiffViewer original={localDocContent} updated={localCenterDocContent} />
-          ) : localCenterDocLoading ? (
-            <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
-          ) : (
-            <div className="mt-12 text-center text-[13px] text-muted">{t("mySkills.sourceDiffUnavailable")}</div>
-          )
-        ) : localContentTab === "center" ? (
-          localCenterDocLoading ? (
-            <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
-          ) : localCenterDocContent ? (
-            <SkillMarkdown content={localCenterDocContent} />
-          ) : (
-            <div className="mt-12 text-center text-[13px] text-muted">{t("mySkills.sourceDiffUnavailable")}</div>
-          )
-        ) : localDocContent ? (
-          <SkillMarkdown content={localDocContent} />
-        ) : (
-          <div className="mt-12 text-center text-[13px] text-muted">{t("common.documentMissing")}</div>
-        )}
-      </DetailSheet>
+      {localDetailSkill && (
+        <SkillTranslationControls
+          translationId={localDetailTranslationId}
+          skillName={localDetailSkill.name}
+          skillUpdatedAt={0}
+          description={localDetailSkill.description}
+          content={localDetailTranslationContent}
+          disabled={localContentTab === "diff" || !localDetailTranslationContent}
+        >
+          {({ title, description, content, toolbar }) => (
+            <DetailSheet
+              open={true}
+              title={title}
+              description={description ? <p className="line-clamp-3">{description}</p> : undefined}
+              meta={
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={cn("rounded-full px-2.5 py-1 text-[12px] font-medium", getLocalStatusMeta(t, localDetailSkill.sync_status).className)}>
+                    {getLocalStatusMeta(t, localDetailSkill.sync_status).label}
+                  </span>
+                  <span className="rounded-full bg-surface-hover px-2.5 py-1 text-[12px] text-muted">
+                    {localDetailSkill.relative_path}
+                  </span>
+                </div>
+              }
+              onClose={() => setLocalDetailSkill(null)}
+            >
+              {localDetailSkill.center_skill_id && (
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  {(["local", "diff", "center"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setLocalContentTab(tab)}
+                      className={cn(
+                        "rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors",
+                        localContentTab === tab
+                          ? "bg-accent text-white"
+                          : "bg-surface-hover text-muted hover:text-secondary"
+                      )}
+                      disabled={(tab === "diff" || tab === "center") && localCenterDocLoading}
+                    >
+                      {tab === "local"
+                        ? t("mySkills.docTabs.local")
+                        : tab === "diff"
+                          ? t("mySkills.docTabs.diff")
+                          : t("project.docTabs.center")}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {localContentTab !== "diff" && toolbar}
+
+              {localDocLoading ? (
+                <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
+              ) : localContentTab === "diff" ? (
+                localDocContent && localCenterDocContent ? (
+                  <DocumentDiffViewer original={localDocContent} updated={localCenterDocContent} />
+                ) : localCenterDocLoading ? (
+                  <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
+                ) : (
+                  <div className="mt-12 text-center text-[13px] text-muted">{t("mySkills.sourceDiffUnavailable")}</div>
+                )
+              ) : localContentTab === "center" ? (
+                localCenterDocLoading ? (
+                  <div className="mt-12 text-center text-[13px] text-muted">{t("common.loading")}</div>
+                ) : localCenterDocContent ? (
+                  <SkillMarkdown content={content} />
+                ) : (
+                  <div className="mt-12 text-center text-[13px] text-muted">{t("mySkills.sourceDiffUnavailable")}</div>
+                )
+              ) : localDocContent ? (
+                <SkillMarkdown content={content} />
+              ) : (
+                <div className="mt-12 text-center text-[13px] text-muted">{t("common.documentMissing")}</div>
+              )}
+            </DetailSheet>
+          )}
+        </SkillTranslationControls>
+      )}
 
       <ConfirmDialog
         open={!!uploadConfirmSkill}

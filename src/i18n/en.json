@@ -235,6 +235,7 @@
   "translation": {
     "common": {
       "translating": "Translating...",
+      "checkingApi": "Checking API...",
       "translated": "Translated",
       "continue": "Continue translation",
       "retryChunk": "Retry current chunk",
@@ -259,6 +260,19 @@
       "clearCacheConfirm": "Clear the saved translation for this Skill? The original Skill file will not be modified.",
       "retranslateTitle": "Retranslate body",
       "retranslateConfirm": "Retranslate the current body? Existing body translation will be overwritten, but the original Skill file will not be modified."
+    },
+    "cards": {
+      "translate": "Translate cards",
+      "translated": "Cards translated",
+      "progress": "Translating cards {{current}} / {{total}}",
+      "done": "Card translation completed",
+      "partialFailed": "Card translation completed, but {{count}} item(s) failed and can be retried",
+      "error": "Card translation failed: {{error}}",
+      "cancelledPartial": "Card translation cancelled; completed items were saved",
+      "cancelled": "Card translation cancelled",
+      "retryFailed": "Retry failed cards",
+      "retranslateTitle": "Retranslate cards",
+      "retranslateConfirm": "Retranslate the card titles and descriptions in the current list? Existing card translations will be overwritten, but original Skills will not be modified."
     }
   },
   "dashboard": {
