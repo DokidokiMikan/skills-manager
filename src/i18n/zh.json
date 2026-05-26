@@ -235,6 +235,7 @@
   "translation": {
     "common": {
       "translating": "翻译中...",
+      "translated": "已翻译",
       "continue": "继续翻译",
       "showOriginal": "显示原文",
       "showTranslation": "显示译文",

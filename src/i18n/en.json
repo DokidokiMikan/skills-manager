@@ -235,6 +235,7 @@
   "translation": {
     "common": {
       "translating": "Translating...",
+      "translated": "Translated",
       "continue": "Continue translation",
       "showOriginal": "Show original",
       "showTranslation": "Show translation",

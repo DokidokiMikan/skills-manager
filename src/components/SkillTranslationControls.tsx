@@ -28,13 +28,17 @@ interface SkillTranslationControlsProps {
 }
 
 const TRANSLATION_CHUNK_BREAK = "---TRANSLATION_CHUNK_BREAK---";
+const DEFAULT_TRANSLATION_CHUNK_MAX_CHARS = 1600;
+const TRANSLATION_CHUNK_SOFT_LIMIT_RATIO = 0.75;
+const TRANSLATION_CHUNK_MIN_SECTION_CHARS = 260;
 
-const splitMarkdownIntoChunks = (content: string, maxChars = 450) => {
+const splitMarkdownIntoChunks = (content: string, maxChars = DEFAULT_TRANSLATION_CHUNK_MAX_CHARS) => {
   const lines = content.split(/\r?\n/);
   const chunks: string[] = [];
   let current: string[] = [];
   let inCodeBlock = false;
 
+  const currentLength = () => current.join("\n").length;
   const pushCurrent = () => {
     const text = current.join("\n").trim();
     if (text) chunks.push(text);
@@ -42,24 +46,35 @@ const splitMarkdownIntoChunks = (content: string, maxChars = 450) => {
   };
 
   for (const line of lines) {
-    if (/^```/.test(line.trim())) {
-      inCodeBlock = !inCodeBlock;
-    }
-
-    const currentText = current.join("\n");
-    const wouldBeTooLong = currentText.length + line.length + 1 > maxChars;
-    const isHeading = /^#{1,6}\s+/.test(line);
-    const isBlank = line.trim() === "";
+    const trimmed = line.trim();
+    const startsCodeFence = /^```/.test(trimmed);
+    const wasInCodeBlock = inCodeBlock;
+    const currentTextLength = currentLength();
+    const wouldBeTooLong =
+      currentTextLength + line.length + (current.length > 0 ? 1 : 0) > maxChars;
+    const isHeading = /^#{1,6}\s+/.test(trimmed);
+    const isBlank = trimmed === "";
+    const isListItem = /^[-*+]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed);
+    const isSoftBoundary = isHeading || isBlank || isListItem;
+    const isLargeEnoughSection =
+      currentTextLength >= Math.max(maxChars * 0.3, TRANSLATION_CHUNK_MIN_SECTION_CHARS);
+    const isPastSoftLimit = currentTextLength >= maxChars * TRANSLATION_CHUNK_SOFT_LIMIT_RATIO;
 
     if (
-      !inCodeBlock &&
+      !wasInCodeBlock &&
       current.length > 0 &&
-      (wouldBeTooLong || isHeading || (isBlank && currentText.length > maxChars * 0.65))
+      (wouldBeTooLong ||
+        (isHeading && isLargeEnoughSection) ||
+        (isSoftBoundary && isPastSoftLimit))
     ) {
       pushCurrent();
     }
 
     current.push(line);
+
+    if (startsCodeFence) {
+      inCodeBlock = !inCodeBlock;
+    }
   }
 
   pushCurrent();
@@ -429,6 +444,10 @@ ${headerText}`,
 
   const primaryButtonLabel = (() => {
     if (translationLoading) return t("translation.common.translating");
+
+    if (translationComplete && translationStored) {
+      return t("translation.common.translated");
+    }
 
     if (translatedChunks.length > 0 && !translationComplete) {
       return t("translation.common.continue");
