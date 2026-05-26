@@ -266,6 +266,7 @@ export function SkillTranslationControls({
   const [confirmRefreshOpen, setConfirmRefreshOpen] = useState(false);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [failedChunkIndex, setFailedChunkIndex] = useState<number | null>(null);
+  const [activeTranslationChunkIndex, setActiveTranslationChunkIndex] = useState<number | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
   const [sourceHash, setSourceHash] = useState<string | null>(null);
   const translationRunIdRef = useRef(0);
@@ -294,6 +295,7 @@ export function SkillTranslationControls({
     setTranslationProgress(null);
     setTranslationLoading(false);
     setFailedChunkIndex(null);
+    setActiveTranslationChunkIndex(null);
     setSourceHash(null);
 
     hashSkillDocumentTranslationSource(content)
@@ -408,6 +410,7 @@ ${headerText}`,
     setTranslationError(null);
     setTranslationProgress(null);
     setFailedChunkIndex(null);
+    setActiveTranslationChunkIndex(null);
     setTranslationComplete(false);
 
     let activeChunkIndex: number | null = null;
@@ -452,6 +455,9 @@ ${headerText}`,
         if (translationRunIdRef.current !== runId) return;
 
         activeChunkIndex = index;
+        setActiveTranslationChunkIndex(index);
+        setTranslationProgress(t("translation.body.progress", { current: index + 1, total: chunks.length }));
+
         const translatedChunk = await translateProtectedChunk(
           chunks[index],
           effectiveTargetLanguage
@@ -491,6 +497,7 @@ ${headerText}`,
           effectiveLanguageCode
         );
         activeChunkIndex = null;
+        setActiveTranslationChunkIndex(null);
       }
 
       if (translationRunIdRef.current !== runId) return;
@@ -503,6 +510,7 @@ ${headerText}`,
 
       const message = error instanceof Error ? error.message : String(error);
       setFailedChunkIndex(activeChunkIndex);
+      setActiveTranslationChunkIndex(null);
       setTranslationProgress(
         activeChunkIndex === null
           ? null
@@ -514,6 +522,7 @@ ${headerText}`,
       setTranslationError(message);
     } finally {
       if (translationRunIdRef.current === runId) {
+        setActiveTranslationChunkIndex(null);
         setTranslationLoading(false);
       }
     }
@@ -537,6 +546,7 @@ ${headerText}`,
       setTranslationStored(false);
       setTranslationComplete(false);
       setFailedChunkIndex(null);
+      setActiveTranslationChunkIndex(null);
       setTranslationProgress(t("translation.body.cacheCleared"));
       setConfirmClearOpen(false);
     } catch (error) {
@@ -551,6 +561,7 @@ ${headerText}`,
     translationRunIdRef.current += 1;
     setTranslationLoading(false);
     setTranslationError(null);
+    setActiveTranslationChunkIndex(null);
 
     if (translatedChunks.length > 0) {
       setTranslationStored(true);
@@ -570,9 +581,20 @@ ${headerText}`,
     }
 
     const translatedPart = stripTranslatedHeaderFromBody(translatedChunks.join("\n\n"));
-    const remainingPart = effectiveOriginalChunks.slice(translatedChunks.length).join("\n\n");
+    const activeChunkProgress =
+      translationLoading && activeTranslationChunkIndex !== null
+        ? `> ${t("translation.body.progress", {
+            current: activeTranslationChunkIndex + 1,
+            total: effectiveOriginalChunks.length,
+          })}`
+        : null;
+    const remainingStartIndex =
+      activeTranslationChunkIndex === null
+        ? translatedChunks.length
+        : Math.max(activeTranslationChunkIndex + 1, translatedChunks.length);
+    const remainingPart = effectiveOriginalChunks.slice(remainingStartIndex).join("\n\n");
 
-    return [translatedPart, remainingPart].filter(Boolean).join("\n\n");
+    return [translatedPart, activeChunkProgress, remainingPart].filter(Boolean).join("\n\n");
   })();
 
   const primaryButtonLabel = (() => {
@@ -601,7 +623,11 @@ ${headerText}`,
     <>
       <div className="fixed bottom-5 right-5 z-[80] flex max-w-[min(520px,calc(100vw-2rem))] flex-col items-end gap-2">
         {(translationProgress || translationError) && (
-          <div className="max-w-full rounded-2xl border border-border-subtle bg-surface/95 px-3 py-2 text-right text-[12px] shadow-lg backdrop-blur">
+          <div
+            role="status"
+            aria-live="polite"
+            className="max-w-full rounded-2xl border border-border-subtle bg-surface/95 px-3 py-2 text-right text-[12px] shadow-lg backdrop-blur"
+          >
             {translationProgress && (
               <div className="text-muted">{translationProgress}</div>
             )}
