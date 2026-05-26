@@ -237,19 +237,26 @@
       "translating": "翻譯中...",
       "translated": "已翻譯",
       "continue": "繼續翻譯",
+      "retryChunk": "重試目前段落",
       "showOriginal": "顯示原文",
       "showTranslation": "顯示譯文",
       "cancel": "取消",
       "cancelTranslation": "取消翻譯",
+      "clearCache": "清除譯文",
       "retranslate": "重新翻譯",
+      "confirmClearCache": "確認清除",
       "confirmRetranslate": "確認重新翻譯"
     },
     "body": {
       "translate": "翻譯正文",
       "progress": "翻譯中：{{current}} / {{total}} 段",
+      "chunkFailed": "第 {{current}} / {{total}} 段翻譯失敗，可重試目前段落",
       "error": "翻譯失敗：{{error}}",
       "cancelledPartial": "已取消翻譯，已儲存已完成部分，可繼續翻譯",
       "cancelled": "已取消翻譯",
+      "cacheCleared": "已清除目前 Skill 的譯文快取",
+      "clearCacheTitle": "清除譯文快取",
+      "clearCacheConfirm": "確定清除目前 Skill 的已儲存譯文嗎？原始 Skill 檔案不會被修改。",
       "retranslateTitle": "重新翻譯正文",
       "retranslateConfirm": "確定要重新翻譯目前正文嗎？已有正文翻譯會被覆蓋，但原始 Skill 檔案不會被修改。"
     }

@@ -237,19 +237,26 @@
       "translating": "翻译中...",
       "translated": "已翻译",
       "continue": "继续翻译",
+      "retryChunk": "重试当前段",
       "showOriginal": "显示原文",
       "showTranslation": "显示译文",
       "cancel": "取消",
       "cancelTranslation": "取消翻译",
+      "clearCache": "清除译文",
       "retranslate": "重新翻译",
+      "confirmClearCache": "确认清除",
       "confirmRetranslate": "确认重新翻译"
     },
     "body": {
       "translate": "翻译正文",
       "progress": "翻译中：{{current}} / {{total}} 段",
+      "chunkFailed": "第 {{current}} / {{total}} 段翻译失败，可重试当前段",
       "error": "翻译失败：{{error}}",
       "cancelledPartial": "已取消翻译，已保存已完成部分，可继续翻译",
       "cancelled": "已取消翻译",
+      "cacheCleared": "已清除当前 Skill 的译文缓存",
+      "clearCacheTitle": "清除译文缓存",
+      "clearCacheConfirm": "确定清除当前 Skill 的已保存译文吗？原始 Skill 文件不会被修改。",
       "retranslateTitle": "重新翻译正文",
       "retranslateConfirm": "确定要重新翻译当前正文吗？已有正文翻译会被覆盖，但原始 Skill 文件不会被修改。"
     }

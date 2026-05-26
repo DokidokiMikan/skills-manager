@@ -772,6 +772,15 @@ impl SkillStore {
         Ok(record)
     }
 
+    pub fn delete_skill_translation(&self, skill_id: &str, language: &str) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let changed = conn.execute(
+            "DELETE FROM skill_translations WHERE skill_id = ?1 AND language = ?2",
+            params![skill_id, language],
+        )?;
+        Ok(changed)
+    }
+
     pub fn remap_tool_key_references(&self, old_key: &str, new_key: &str) -> Result<()> {
         if old_key == new_key {
             return Ok(());

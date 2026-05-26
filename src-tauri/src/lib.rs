@@ -976,6 +976,7 @@ pub fn run() {
             commands::translate::translate_text,
             commands::translations::get_skill_translation,
             commands::translations::save_skill_translation,
+            commands::translations::delete_skill_translation,
             // Git Backup
             commands::git_backup::git_backup_fetch,
             commands::git_backup::git_backup_status,

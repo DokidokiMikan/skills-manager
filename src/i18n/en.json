@@ -237,19 +237,26 @@
       "translating": "Translating...",
       "translated": "Translated",
       "continue": "Continue translation",
+      "retryChunk": "Retry current chunk",
       "showOriginal": "Show original",
       "showTranslation": "Show translation",
       "cancel": "Cancel",
       "cancelTranslation": "Cancel translation",
+      "clearCache": "Clear translation",
       "retranslate": "Retranslate",
+      "confirmClearCache": "Clear translation",
       "confirmRetranslate": "Confirm retranslation"
     },
     "body": {
       "translate": "Translate body",
       "progress": "Translating: {{current}} / {{total}} chunks",
+      "chunkFailed": "Chunk {{current}} / {{total}} failed. You can retry the current chunk.",
       "error": "Translation failed: {{error}}",
       "cancelledPartial": "Translation cancelled; completed chunks were saved and can be continued",
       "cancelled": "Translation cancelled",
+      "cacheCleared": "Cached translation cleared for this Skill",
+      "clearCacheTitle": "Clear cached translation",
+      "clearCacheConfirm": "Clear the saved translation for this Skill? The original Skill file will not be modified.",
       "retranslateTitle": "Retranslate body",
       "retranslateConfirm": "Retranslate the current body? Existing body translation will be overwritten, but the original Skill file will not be modified."
     }

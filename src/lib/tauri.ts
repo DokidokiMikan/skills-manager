@@ -506,6 +506,14 @@ export const saveSkillTranslation = (
     },
   });
 
+export const deleteSkillTranslation = (skillId: string, languageCode = "zh-CN") =>
+  invoke<number>("delete_skill_translation", {
+    request: {
+      skillId,
+      language: languageCode,
+    },
+  });
+
 export const getCentralRepoPath = () =>
   invoke<string>("get_central_repo_path");
 

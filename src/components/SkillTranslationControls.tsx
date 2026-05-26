@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  deleteSkillTranslation,
   getSkillTranslation,
   saveSkillTranslation,
   translateText,
@@ -31,6 +32,39 @@ const TRANSLATION_CHUNK_BREAK = "---TRANSLATION_CHUNK_BREAK---";
 const DEFAULT_TRANSLATION_CHUNK_MAX_CHARS = 1600;
 const TRANSLATION_CHUNK_SOFT_LIMIT_RATIO = 0.75;
 const TRANSLATION_CHUNK_MIN_SECTION_CHARS = 260;
+const PROTECTED_PLACEHOLDER_PREFIX = "SM_TRANSLATION_PROTECTED";
+
+interface ProtectedTranslationSegment {
+  placeholder: string;
+  value: string;
+}
+
+const resolveTranslationLocale = (language: string | undefined) => {
+  const normalized = (language || "zh-CN").toLowerCase();
+
+  if (
+    normalized.startsWith("zh-tw") ||
+    normalized.startsWith("zh-hk") ||
+    normalized.includes("hant")
+  ) {
+    return {
+      languageCode: "zh-TW",
+      targetLanguage: "繁體中文",
+    };
+  }
+
+  if (normalized.startsWith("en")) {
+    return {
+      languageCode: "en",
+      targetLanguage: "English",
+    };
+  }
+
+  return {
+    languageCode: "zh-CN",
+    targetLanguage: "简体中文",
+  };
+};
 
 const splitMarkdownIntoChunks = (content: string, maxChars = DEFAULT_TRANSLATION_CHUNK_MAX_CHARS) => {
   const lines = content.split(/\r?\n/);
@@ -161,18 +195,63 @@ const parseStoredTranslatedChunks = (storedContent: string) => {
   return [storedContent.trim()];
 };
 
+const protectTranslationSegments = (text: string) => {
+  const segments: ProtectedTranslationSegment[] = [];
+  let nextText = text;
+
+  const protect = (value: string) => {
+    const placeholder = `[[${PROTECTED_PLACEHOLDER_PREFIX}_${segments.length}]]`;
+    segments.push({ placeholder, value });
+    return placeholder;
+  };
+
+  nextText = nextText.replace(/```[\s\S]*?```/g, (match) => protect(match));
+  nextText = nextText.replace(/`[^`\n]+`/g, (match) => protect(match));
+  nextText = nextText.replace(
+    /(^|\n)(\s*(?:\$\s+|(?:npm|pnpm|yarn|git|cargo|python|python3|node|npx|uv|pip|pip3|powershell|pwsh|cmd|curl|docker|ollama|tauri)\b)[^\n]*)/g,
+    (_match, prefix: string, line: string) => `${prefix}${protect(line)}`
+  );
+
+  return { text: nextText, segments };
+};
+
+const restoreTranslationSegments = (
+  text: string,
+  segments: ProtectedTranslationSegment[]
+) =>
+  segments.reduce(
+    (restored, segment) => restored.split(segment.placeholder).join(segment.value),
+    text
+  );
+
+const hasTranslatableText = (text: string) =>
+  text
+    .replace(new RegExp(`\\[\\[${PROTECTED_PLACEHOLDER_PREFIX}_\\d+\\]\\]`, "g"), "")
+    .trim().length > 0;
+
+const translateProtectedChunk = async (text: string, targetLanguage: string) => {
+  const protectedChunk = protectTranslationSegments(text);
+
+  if (!hasTranslatableText(protectedChunk.text)) {
+    return text;
+  }
+
+  const translated = await translateText(protectedChunk.text, targetLanguage);
+  return restoreTranslationSegments(translated, protectedChunk.segments);
+};
+
 export function SkillTranslationControls({
   translationId,
   skillName,
   skillUpdatedAt,
   description = null,
   content,
-  targetLanguage = "简体中文",
-  languageCode = "zh-CN",
+  targetLanguage,
+  languageCode,
   disabled = false,
   children,
 }: SkillTranslationControlsProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [translatedTitle, setTranslatedTitle] = useState<string | null>(null);
   const [translatedDescription, setTranslatedDescription] = useState<string | null>(null);
   const [translatedContent, setTranslatedContent] = useState<string | null>(null);
@@ -185,9 +264,18 @@ export function SkillTranslationControls({
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [translationProgress, setTranslationProgress] = useState<string | null>(null);
   const [confirmRefreshOpen, setConfirmRefreshOpen] = useState(false);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [failedChunkIndex, setFailedChunkIndex] = useState<number | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
   const [sourceHash, setSourceHash] = useState<string | null>(null);
   const translationRunIdRef = useRef(0);
 
+  const i18nLocale = useMemo(
+    () => resolveTranslationLocale(i18n.resolvedLanguage || i18n.language),
+    [i18n.language, i18n.resolvedLanguage]
+  );
+  const effectiveTargetLanguage = targetLanguage ?? i18nLocale.targetLanguage;
+  const effectiveLanguageCode = languageCode ?? i18nLocale.languageCode;
   const currentOriginalChunks = useMemo(() => splitMarkdownIntoChunks(content), [content]);
 
   useEffect(() => {
@@ -205,6 +293,7 @@ export function SkillTranslationControls({
     setTranslationError(null);
     setTranslationProgress(null);
     setTranslationLoading(false);
+    setFailedChunkIndex(null);
     setSourceHash(null);
 
     hashSkillDocumentTranslationSource(content)
@@ -217,7 +306,7 @@ export function SkillTranslationControls({
           translationId,
           skillUpdatedAt,
           nextSourceHash,
-          languageCode
+          effectiveLanguageCode
         );
       })
       .then((translation) => {
@@ -259,7 +348,7 @@ export function SkillTranslationControls({
       cancelled = true;
       translationRunIdRef.current += 1;
     };
-  }, [translationId, skillUpdatedAt, languageCode, content, currentOriginalChunks]);
+  }, [translationId, skillUpdatedAt, effectiveLanguageCode, content, currentOriginalChunks]);
 
   const translateHeader = async () => {
     const headerText = [
@@ -277,12 +366,12 @@ export function SkillTranslationControls({
     }
 
     const headerResult = await translateText(
-      `Translate this skill title and description into ${targetLanguage}. Keep this exact format:
+      `Translate this skill title and description into ${effectiveTargetLanguage}. Keep this exact format:
 Title: ...
 Description: ...
 
 ${headerText}`,
-      targetLanguage
+      effectiveTargetLanguage
     );
 
     const titleMatch = headerResult.match(/^Title:\s*(.+)$/im);
@@ -318,7 +407,10 @@ ${headerText}`,
     setTranslationLoading(true);
     setTranslationError(null);
     setTranslationProgress(null);
+    setFailedChunkIndex(null);
     setTranslationComplete(false);
+
+    let activeChunkIndex: number | null = null;
 
     try {
       let nextTranslatedTitle = refresh ? null : translatedTitle;
@@ -345,7 +437,7 @@ ${headerText}`,
           "",
           nextTranslatedTitle,
           nextTranslatedDescription,
-          languageCode
+          effectiveLanguageCode
         );
 
         if (translationRunIdRef.current !== runId) return;
@@ -359,7 +451,11 @@ ${headerText}`,
       for (let index = nextChunks.length; index < chunks.length; index += 1) {
         if (translationRunIdRef.current !== runId) return;
 
-        const translatedChunk = await translateText(chunks[index], targetLanguage);
+        activeChunkIndex = index;
+        const translatedChunk = await translateProtectedChunk(
+          chunks[index],
+          effectiveTargetLanguage
+        );
 
         if (translationRunIdRef.current !== runId) return;
 
@@ -392,8 +488,9 @@ ${headerText}`,
           serializeTranslatedChunks(nextChunks),
           nextTranslatedTitle,
           nextTranslatedDescription,
-          languageCode
+          effectiveLanguageCode
         );
+        activeChunkIndex = null;
       }
 
       if (translationRunIdRef.current !== runId) return;
@@ -405,12 +502,48 @@ ${headerText}`,
       if (translationRunIdRef.current !== runId) return;
 
       const message = error instanceof Error ? error.message : String(error);
+      setFailedChunkIndex(activeChunkIndex);
+      setTranslationProgress(
+        activeChunkIndex === null
+          ? null
+          : t("translation.body.chunkFailed", {
+              current: activeChunkIndex + 1,
+              total: chunks.length,
+            })
+      );
       setTranslationError(message);
-      alert(t("translation.body.error", { error: message }));
     } finally {
       if (translationRunIdRef.current === runId) {
         setTranslationLoading(false);
       }
+    }
+  };
+
+  const handleClearTranslationCache = async () => {
+    if (clearingCache || translationLoading) return;
+
+    setClearingCache(true);
+    setTranslationError(null);
+
+    try {
+      await deleteSkillTranslation(translationId, effectiveLanguageCode);
+      translationRunIdRef.current += 1;
+      setTranslatedTitle(null);
+      setTranslatedDescription(null);
+      setTranslatedContent(null);
+      setTranslatedChunks([]);
+      setOriginalChunks(currentOriginalChunks);
+      setShowTranslation(false);
+      setTranslationStored(false);
+      setTranslationComplete(false);
+      setFailedChunkIndex(null);
+      setTranslationProgress(t("translation.body.cacheCleared"));
+      setConfirmClearOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setTranslationError(message);
+    } finally {
+      setClearingCache(false);
     }
   };
 
@@ -447,6 +580,10 @@ ${headerText}`,
 
     if (translationComplete && translationStored) {
       return t("translation.common.translated");
+    }
+
+    if (translationError && failedChunkIndex !== null) {
+      return t("translation.common.retryChunk");
     }
 
     if (translatedChunks.length > 0 && !translationComplete) {
@@ -506,14 +643,25 @@ ${headerText}`,
           )}
 
           {translationStored && !translationLoading && (
-            <button
-              type="button"
-              onClick={() => setConfirmRefreshOpen(true)}
-              disabled={disabled || !content}
-              className="rounded-full bg-red-500/10 px-3 py-1.5 text-[12px] font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {t("translation.common.retranslate")}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirmClearOpen(true)}
+                disabled={disabled || clearingCache}
+                className="rounded-full bg-surface-hover px-3 py-1.5 text-[12px] font-medium text-muted transition-colors hover:text-secondary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {t("translation.common.clearCache")}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setConfirmRefreshOpen(true)}
+                disabled={disabled || !content}
+                className="rounded-full bg-red-500/10 px-3 py-1.5 text-[12px] font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {t("translation.common.retranslate")}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -545,6 +693,37 @@ ${headerText}`,
                 className="rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
               >
                 {t("translation.common.confirmRetranslate")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmClearOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-border-subtle bg-surface p-5 shadow-xl">
+            <h3 className="text-base font-semibold text-primary">{t("translation.body.clearCacheTitle")}</h3>
+
+            <p className="mt-2 text-sm leading-6 text-secondary">
+              {t("translation.body.clearCacheConfirm")}
+            </p>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmClearOpen(false)}
+                className="rounded-xl border border-border-subtle bg-surface px-4 py-2 text-sm font-medium text-secondary transition hover:bg-surface-hover"
+              >
+                {t("translation.common.cancel")}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleClearTranslationCache()}
+                disabled={clearingCache}
+                className="rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {t("translation.common.confirmClearCache")}
               </button>
             </div>
           </div>

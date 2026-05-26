@@ -25,6 +25,13 @@ pub struct SaveSkillTranslationRequest {
     pub content: String,
 }
 
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteSkillTranslationRequest {
+    pub skill_id: String,
+    pub language: Option<String>,
+}
+
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillTranslation {
@@ -98,6 +105,21 @@ pub async fn save_skill_translation(
                 &request.content,
             )
             .map(Into::into)
+            .map_err(AppError::db)
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn delete_skill_translation(
+    request: DeleteSkillTranslationRequest,
+    store: State<'_, Arc<SkillStore>>,
+) -> Result<usize, AppError> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let language = request.language.unwrap_or_else(|| "zh-CN".to_string());
+        store
+            .delete_skill_translation(&request.skill_id, &language)
             .map_err(AppError::db)
     })
     .await?

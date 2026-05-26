@@ -282,7 +282,19 @@ async fn resolve_model(profile: &ApiProfile) -> Result<String, String> {
     Err("未指定模型，且没有发现可用模型".to_string())
 }
 
+fn workspace_term_for(target_lang: &str) -> &'static str {
+    let lower = target_lang.to_ascii_lowercase();
+    if target_lang.contains('繁') || lower.contains("traditional") || lower.contains("zh-tw") {
+        "工作區"
+    } else if lower.contains("english") || lower == "en" || lower.starts_with("en-") {
+        "workspace"
+    } else {
+        "工作区"
+    }
+}
+
 fn build_prompt(text: &str, target_lang: &str) -> String {
+    let workspace_term = workspace_term_for(target_lang);
     format!(
         r#"Translate the following AI agent skill content into {target_lang}.
 
@@ -290,7 +302,9 @@ Rules:
 - Preserve Markdown structure.
 - Preserve code blocks exactly.
 - Do not translate commands, file paths, variable names, JSON/YAML keys, or identifiers.
+- Do not translate or alter placeholders matching [[SM_TRANSLATION_PROTECTED_0]].
 - Translate natural-language explanations, titles, descriptions, and instructions.
+- Product glossary: keep "Skill", "Agent", "Preset", and "API" as product terms; translate "workspace" consistently as "{workspace_term}".
 - Return only the translated content.
 
 Content:
@@ -448,9 +462,9 @@ pub async fn translate_text(
     let prompt = build_prompt(text, &target_lang);
 
     match profile.provider.as_str() {
-        "ollama" => send_ollama_request(&profile, prompt, 800).await,
+        "ollama" => send_ollama_request(&profile, prompt, 2200).await,
         "openai-compatible" | "lm-studio-api" | "lm-studio" | "llama-cpp" => {
-            send_openai_compatible_request(&profile, prompt, 800).await
+            send_openai_compatible_request(&profile, prompt, 2200).await
         }
         "anthropic-compatible" => Err(
             "Anthropic 兼容翻译请求还没接入，请先使用 OpenAI 兼容 / LM Studio API / llama.cpp / Ollama"
