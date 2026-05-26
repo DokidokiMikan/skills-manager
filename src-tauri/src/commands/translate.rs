@@ -302,7 +302,7 @@ Rules:
 - Preserve Markdown structure.
 - Preserve code blocks exactly.
 - Do not translate commands, file paths, variable names, JSON/YAML keys, or identifiers.
-- Do not translate or alter placeholders matching [[SM_TRANSLATION_PROTECTED_0]].
+- Do not translate or alter placeholders matching [[SMT0]], [[SMT1]], or similar numbered SMT placeholders.
 - Translate natural-language explanations, titles, descriptions, and instructions.
 - Product glossary: keep "Skill", "Agent", "Preset", and "API" as product terms; translate "workspace" consistently as "{workspace_term}".
 - Return only the translated content.

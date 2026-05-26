@@ -32,11 +32,28 @@ const TRANSLATION_CHUNK_BREAK = "---TRANSLATION_CHUNK_BREAK---";
 const DEFAULT_TRANSLATION_CHUNK_MAX_CHARS = 1600;
 const TRANSLATION_CHUNK_SOFT_LIMIT_RATIO = 0.75;
 const TRANSLATION_CHUNK_MIN_SECTION_CHARS = 260;
-const PROTECTED_PLACEHOLDER_PREFIX = "SM_TRANSLATION_PROTECTED";
+const PROTECTED_PLACEHOLDER_PREFIX = "SMT";
+const TRANSLATION_REVEAL_INTERVAL_MS = 65;
+const TRANSLATION_REVEAL_MIN_CHARS = 24;
+const TRANSLATION_REVEAL_MAX_CHARS = 72;
 
 interface ProtectedTranslationSegment {
   placeholder: string;
   value: string;
+}
+
+interface RevealingTranslationChunk {
+  index: number;
+  text: string;
+}
+
+type TranslationChunkJobResult =
+  | { status: "ok"; text: string }
+  | { status: "error"; error: unknown };
+
+interface TranslationChunkJob {
+  index: number;
+  result: Promise<TranslationChunkJobResult>;
 }
 
 const resolveTranslationLocale = (language: string | undefined) => {
@@ -195,12 +212,20 @@ const parseStoredTranslatedChunks = (storedContent: string) => {
   return [storedContent.trim()];
 };
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const protectedPlaceholderPattern = (index: number) =>
+  new RegExp(
+    `\\[\\[\\s*(?:${escapeRegExp(PROTECTED_PLACEHOLDER_PREFIX)}\\s*[-_\\s]*${index}|SM\\s*[-_\\s]*(?:TRANSLATION|TRANSLATIONS|TRANSLATE)?\\s*[-_\\s]*(?:PROTECTED|PROTECT|PROTECTION)?\\s*[-_\\s]*${index})\\s*\\]\\]`,
+    "gi"
+  );
+
 const protectTranslationSegments = (text: string) => {
   const segments: ProtectedTranslationSegment[] = [];
   let nextText = text;
 
   const protect = (value: string) => {
-    const placeholder = `[[${PROTECTED_PLACEHOLDER_PREFIX}_${segments.length}]]`;
+    const placeholder = `[[${PROTECTED_PLACEHOLDER_PREFIX}${segments.length}]]`;
     segments.push({ placeholder, value });
     return placeholder;
   };
@@ -220,13 +245,32 @@ const restoreTranslationSegments = (
   segments: ProtectedTranslationSegment[]
 ) =>
   segments.reduce(
-    (restored, segment) => restored.split(segment.placeholder).join(segment.value),
+    (restored, segment, index) =>
+      restored
+        .split(segment.placeholder)
+        .join(segment.value)
+        .replace(protectedPlaceholderPattern(index), segment.value),
     text
   );
 
+const restoreStoredTranslationSegments = (translatedChunk: string, sourceChunk?: string) => {
+  if (!sourceChunk) return translatedChunk;
+
+  const { segments } = protectTranslationSegments(sourceChunk);
+  return segments.length > 0
+    ? restoreTranslationSegments(translatedChunk, segments)
+    : translatedChunk;
+};
+
 const hasTranslatableText = (text: string) =>
   text
-    .replace(new RegExp(`\\[\\[${PROTECTED_PLACEHOLDER_PREFIX}_\\d+\\]\\]`, "g"), "")
+    .replace(
+      new RegExp(
+        `\\[\\[\\s*${escapeRegExp(PROTECTED_PLACEHOLDER_PREFIX)}\\s*[-_\\s]*\\d+\\s*\\]\\]`,
+        "gi"
+      ),
+      ""
+    )
     .trim().length > 0;
 
 const translateProtectedChunk = async (text: string, targetLanguage: string) => {
@@ -238,6 +282,58 @@ const translateProtectedChunk = async (text: string, targetLanguage: string) => 
 
   const translated = await translateText(protectedChunk.text, targetLanguage);
   return restoreTranslationSegments(translated, protectedChunk.segments);
+};
+
+const wait = (ms: number) =>
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+
+const splitPlainTextForReveal = (text: string) => {
+  const frames: string[] = [];
+  let buffer = "";
+
+  const pushBuffer = () => {
+    if (buffer) {
+      frames.push(buffer);
+      buffer = "";
+    }
+  };
+
+  for (const char of text) {
+    buffer += char;
+
+    const isLineBreak = char === "\n";
+    const isSentenceBreak = /[。！？!?；;:.]/.test(char);
+    const shouldReveal =
+      buffer.length >= TRANSLATION_REVEAL_MAX_CHARS ||
+      (buffer.length >= TRANSLATION_REVEAL_MIN_CHARS && (isSentenceBreak || isLineBreak));
+
+    if (shouldReveal) {
+      pushBuffer();
+    }
+  }
+
+  pushBuffer();
+
+  return frames;
+};
+
+const splitTranslatedChunkForReveal = (text: string) => {
+  const frames: string[] = [];
+  const codeFencePattern = /```[\s\S]*?```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = codeFencePattern.exec(text)) !== null) {
+    frames.push(...splitPlainTextForReveal(text.slice(lastIndex, match.index)));
+    frames.push(match[0]);
+    lastIndex = match.index + match[0].length;
+  }
+
+  frames.push(...splitPlainTextForReveal(text.slice(lastIndex)));
+
+  return frames.filter(Boolean);
 };
 
 export function SkillTranslationControls({
@@ -267,6 +363,8 @@ export function SkillTranslationControls({
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [failedChunkIndex, setFailedChunkIndex] = useState<number | null>(null);
   const [activeTranslationChunkIndex, setActiveTranslationChunkIndex] = useState<number | null>(null);
+  const [revealingTranslationChunk, setRevealingTranslationChunk] =
+    useState<RevealingTranslationChunk | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
   const [sourceHash, setSourceHash] = useState<string | null>(null);
   const translationRunIdRef = useRef(0);
@@ -296,6 +394,7 @@ export function SkillTranslationControls({
     setTranslationLoading(false);
     setFailedChunkIndex(null);
     setActiveTranslationChunkIndex(null);
+    setRevealingTranslationChunk(null);
     setSourceHash(null);
 
     hashSkillDocumentTranslationSource(content)
@@ -320,22 +419,26 @@ export function SkillTranslationControls({
         }
 
         const savedChunks = parseStoredTranslatedChunks(translation.content);
-        const joinedSavedContent = savedChunks.join("\n\n");
-        const extractedHeader = extractTranslatedHeader(joinedSavedContent);
-        const strippedContent = stripTranslatedHeaderFromBody(joinedSavedContent);
         const isLegacyTranslation =
           Boolean(translation.content.trim()) &&
           !translation.content.includes(TRANSLATION_CHUNK_BREAK);
+        const savedSourceChunks = isLegacyTranslation ? [content] : currentOriginalChunks;
+        const restoredSavedChunks = savedChunks.map((chunk, index) =>
+          restoreStoredTranslationSegments(chunk, savedSourceChunks[index])
+        );
+        const joinedSavedContent = restoredSavedChunks.join("\n\n");
+        const extractedHeader = extractTranslatedHeader(joinedSavedContent);
+        const strippedContent = stripTranslatedHeaderFromBody(joinedSavedContent);
 
         setOriginalChunks(isLegacyTranslation ? [content] : currentOriginalChunks);
-        setTranslatedChunks(savedChunks);
+        setTranslatedChunks(restoredSavedChunks);
         setTranslatedContent(strippedContent);
         setTranslatedTitle(translation.title || extractedHeader.title);
         setTranslatedDescription(translation.description || extractedHeader.description);
-        setTranslationStored(savedChunks.length > 0);
+        setTranslationStored(restoredSavedChunks.length > 0);
         setTranslationComplete(
           isLegacyTranslation ||
-            (currentOriginalChunks.length > 0 && savedChunks.length >= currentOriginalChunks.length)
+            (currentOriginalChunks.length > 0 && restoredSavedChunks.length >= currentOriginalChunks.length)
         );
       })
       .catch(() => {
@@ -385,6 +488,38 @@ ${headerText}`,
     };
   };
 
+  const revealTranslatedChunk = async (
+    index: number,
+    translatedChunk: string,
+    runId: number
+  ) => {
+    const frames = splitTranslatedChunkForReveal(translatedChunk);
+
+    if (frames.length === 0) {
+      setRevealingTranslationChunk(null);
+      return true;
+    }
+
+    let revealedText = "";
+    setRevealingTranslationChunk({ index, text: "" });
+
+    for (const frame of frames) {
+      if (translationRunIdRef.current !== runId) return false;
+
+      revealedText += frame;
+      setRevealingTranslationChunk({ index, text: revealedText });
+
+      if (frames.length > 1) {
+        await wait(TRANSLATION_REVEAL_INTERVAL_MS);
+      }
+    }
+
+    if (translationRunIdRef.current !== runId) return false;
+
+    setRevealingTranslationChunk(null);
+    return true;
+  };
+
   const handleTranslate = async (options?: { refresh?: boolean }) => {
     if (!content || translationLoading || disabled) return;
 
@@ -411,6 +546,7 @@ ${headerText}`,
     setTranslationProgress(null);
     setFailedChunkIndex(null);
     setActiveTranslationChunkIndex(null);
+    setRevealingTranslationChunk(null);
     setTranslationComplete(false);
 
     let activeChunkIndex: number | null = null;
@@ -451,21 +587,61 @@ ${headerText}`,
         return;
       }
 
-      for (let index = nextChunks.length; index < chunks.length; index += 1) {
+      const startTranslationJob = (index: number): TranslationChunkJob => ({
+        index,
+        result: translateProtectedChunk(chunks[index], effectiveTargetLanguage).then(
+          (translatedChunk) => ({
+            status: "ok" as const,
+            text: translatedChunk.trim(),
+          }),
+          (error) => ({
+            status: "error" as const,
+            error,
+          })
+        ),
+      });
+
+      let pendingJob: TranslationChunkJob | null =
+        nextChunks.length < chunks.length ? startTranslationJob(nextChunks.length) : null;
+
+      while (pendingJob) {
         if (translationRunIdRef.current !== runId) return;
 
-        activeChunkIndex = index;
-        setActiveTranslationChunkIndex(index);
-        setTranslationProgress(t("translation.body.progress", { current: index + 1, total: chunks.length }));
+        const currentJob = pendingJob;
+        activeChunkIndex = currentJob.index;
+        setActiveTranslationChunkIndex(currentJob.index);
+        setTranslationProgress(t("translation.body.progress", {
+          current: currentJob.index + 1,
+          total: chunks.length,
+        }));
 
-        const translatedChunk = await translateProtectedChunk(
-          chunks[index],
-          effectiveTargetLanguage
-        );
+        const currentResult = await currentJob.result;
 
         if (translationRunIdRef.current !== runId) return;
 
-        nextChunks = [...nextChunks, translatedChunk.trim()].filter(Boolean);
+        if (currentResult.status === "error") {
+          throw currentResult.error;
+        }
+
+        pendingJob =
+          currentJob.index + 1 < chunks.length
+            ? startTranslationJob(currentJob.index + 1)
+            : null;
+
+        if (pendingJob) {
+          setActiveTranslationChunkIndex(pendingJob.index);
+          setTranslationProgress(t("translation.body.progress", {
+            current: pendingJob.index + 1,
+            total: chunks.length,
+          }));
+        } else {
+          setActiveTranslationChunkIndex(null);
+        }
+
+        const translatedChunk = currentResult.text;
+        setRevealingTranslationChunk({ index: currentJob.index, text: "" });
+
+        nextChunks = [...nextChunks, translatedChunk];
 
         const joinedTranslatedBody = nextChunks.join("\n\n");
         const strippedTranslatedBody = stripTranslatedHeaderFromBody(joinedTranslatedBody);
@@ -484,7 +660,6 @@ ${headerText}`,
         setTranslatedChunks(nextChunks);
         setTranslatedContent(strippedTranslatedBody);
         setTranslationStored(true);
-        setTranslationProgress(t("translation.body.progress", { current: index + 1, total: chunks.length }));
 
         await saveSkillTranslation(
           translationId,
@@ -496,8 +671,17 @@ ${headerText}`,
           nextTranslatedDescription,
           effectiveLanguageCode
         );
+
+        const revealCompleted = await revealTranslatedChunk(
+          currentJob.index,
+          translatedChunk,
+          runId
+        );
+
+        if (!revealCompleted || translationRunIdRef.current !== runId) return;
+
         activeChunkIndex = null;
-        setActiveTranslationChunkIndex(null);
+        setRevealingTranslationChunk(null);
       }
 
       if (translationRunIdRef.current !== runId) return;
@@ -511,6 +695,7 @@ ${headerText}`,
       const message = error instanceof Error ? error.message : String(error);
       setFailedChunkIndex(activeChunkIndex);
       setActiveTranslationChunkIndex(null);
+      setRevealingTranslationChunk(null);
       setTranslationProgress(
         activeChunkIndex === null
           ? null
@@ -523,6 +708,7 @@ ${headerText}`,
     } finally {
       if (translationRunIdRef.current === runId) {
         setActiveTranslationChunkIndex(null);
+        setRevealingTranslationChunk(null);
         setTranslationLoading(false);
       }
     }
@@ -547,6 +733,7 @@ ${headerText}`,
       setTranslationComplete(false);
       setFailedChunkIndex(null);
       setActiveTranslationChunkIndex(null);
+      setRevealingTranslationChunk(null);
       setTranslationProgress(t("translation.body.cacheCleared"));
       setConfirmClearOpen(false);
     } catch (error) {
@@ -562,6 +749,7 @@ ${headerText}`,
     setTranslationLoading(false);
     setTranslationError(null);
     setActiveTranslationChunkIndex(null);
+    setRevealingTranslationChunk(null);
 
     if (translatedChunks.length > 0) {
       setTranslationStored(true);
@@ -580,21 +768,34 @@ ${headerText}`,
       return stripTranslatedHeaderFromBody(translatedContent || content);
     }
 
-    const translatedPart = stripTranslatedHeaderFromBody(translatedChunks.join("\n\n"));
+    const revealingChunkIndex = revealingTranslationChunk?.index ?? null;
+    const translatedChunksForDisplay =
+      revealingChunkIndex === null
+        ? translatedChunks
+        : translatedChunks.slice(0, revealingChunkIndex);
+    const translatedPart = stripTranslatedHeaderFromBody(translatedChunksForDisplay.join("\n\n"));
+    const revealingPart =
+      revealingTranslationChunk &&
+      (revealingTranslationChunk.text ||
+        `> ${t("translation.body.progress", {
+          current: revealingTranslationChunk.index + 1,
+          total: effectiveOriginalChunks.length,
+        })}`);
     const activeChunkProgress =
-      translationLoading && activeTranslationChunkIndex !== null
+      !revealingPart && translationLoading && activeTranslationChunkIndex !== null
         ? `> ${t("translation.body.progress", {
             current: activeTranslationChunkIndex + 1,
             total: effectiveOriginalChunks.length,
           })}`
         : null;
+    const blockedChunkIndex = revealingChunkIndex ?? activeTranslationChunkIndex;
     const remainingStartIndex =
-      activeTranslationChunkIndex === null
+      blockedChunkIndex === null
         ? translatedChunks.length
-        : Math.max(activeTranslationChunkIndex + 1, translatedChunks.length);
+        : Math.max(blockedChunkIndex + 1, translatedChunks.length);
     const remainingPart = effectiveOriginalChunks.slice(remainingStartIndex).join("\n\n");
 
-    return [translatedPart, activeChunkProgress, remainingPart].filter(Boolean).join("\n\n");
+    return [translatedPart, revealingPart, activeChunkProgress, remainingPart].filter(Boolean).join("\n\n");
   })();
 
   const primaryButtonLabel = (() => {
