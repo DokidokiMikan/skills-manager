@@ -8,6 +8,7 @@
     "globalWorkspace": "全域工作區",
     "lobsterAgents": "龍蝦 Agent",
     "installSkills": "安裝 Skills",
+    "skillAssistant": "Skill 助手",
     "presets": "Preset",
     "newPreset": "新增 Preset",
     "projects": "專案工作區",
@@ -73,6 +74,48 @@
       "navigate": "選擇",
       "open": "開啟",
       "toggle": "呼叫"
+    }
+  },
+  "skillAssistant": {
+    "title": "Skill 助手",
+    "subtitle": "掃描中央 Skill 庫並生成知識庫索引。",
+    "actions": {
+      "scan": "建立知識庫",
+      "refresh": "重新整理知識庫",
+      "reveal": "顯示"
+    },
+    "status": {
+      "label": "狀態",
+      "loading": "載入中",
+      "ready": "已生成",
+      "missing": "未生成"
+    },
+    "stats": {
+      "activeSkills": "活躍 Skills",
+      "deletedSkills": "已刪除記錄",
+      "lastScan": "最後掃描"
+    },
+    "sections": {
+      "knowledgeBase": "知識庫檔案"
+    },
+    "paths": {
+      "root": "知識庫目錄",
+      "manifest": "Manifest",
+      "snapshot": "Snapshot",
+      "changeset": "Changeset"
+    },
+    "changes": {
+      "added": "新增",
+      "updated": "更新",
+      "deleted": "刪除",
+      "unchanged": "未變化"
+    },
+    "common": {
+      "none": "無",
+      "noVersion": "暫無版本"
+    },
+    "toasts": {
+      "scanComplete": "Skill 知識庫已重新整理"
     }
   },
   "apiManagement": {

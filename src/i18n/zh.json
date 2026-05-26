@@ -8,6 +8,7 @@
     "globalWorkspace": "全局工作区",
     "lobsterAgents": "龙虾 Agent",
     "installSkills": "安装 Skills",
+    "skillAssistant": "Skill 助手",
     "presets": "Preset",
     "newPreset": "新建 Preset",
     "projects": "项目工作区",
@@ -73,6 +74,48 @@
       "navigate": "选择",
       "open": "打开",
       "toggle": "呼出"
+    }
+  },
+  "skillAssistant": {
+    "title": "Skill 助手",
+    "subtitle": "扫描中央 Skill 库并生成知识库索引。",
+    "actions": {
+      "scan": "建立知识库",
+      "refresh": "刷新知识库",
+      "reveal": "显示"
+    },
+    "status": {
+      "label": "状态",
+      "loading": "加载中",
+      "ready": "已生成",
+      "missing": "未生成"
+    },
+    "stats": {
+      "activeSkills": "活跃 Skills",
+      "deletedSkills": "已删除记录",
+      "lastScan": "最后扫描"
+    },
+    "sections": {
+      "knowledgeBase": "知识库文件"
+    },
+    "paths": {
+      "root": "知识库目录",
+      "manifest": "Manifest",
+      "snapshot": "Snapshot",
+      "changeset": "Changeset"
+    },
+    "changes": {
+      "added": "新增",
+      "updated": "更新",
+      "deleted": "删除",
+      "unchanged": "未变化"
+    },
+    "common": {
+      "none": "无",
+      "noVersion": "暂无版本"
+    },
+    "toasts": {
+      "scanComplete": "Skill 知识库已刷新"
     }
   },
   "apiManagement": {

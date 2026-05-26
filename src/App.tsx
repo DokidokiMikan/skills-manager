@@ -13,6 +13,7 @@ import { InstallSkills } from "./views/InstallSkills";
 import { Settings } from "./views/Settings";
 import { ProjectDetail } from "./views/ProjectDetail";
 import { ApiManagement } from "./views/ApiManagement";
+import { SkillAssistant } from "./views/SkillAssistant";
 
 function ThemedToaster() {
   const { resolvedTheme } = useThemeContext();
@@ -47,6 +48,7 @@ function App() {
               <Route path="/install" element={<InstallSkills />} />
               <Route path="/project/:id" element={<ProjectDetail />} />
               <Route path="/api-management" element={<ApiManagement />} />
+              <Route path="/skill-assistant" element={<SkillAssistant />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
           </Routes>

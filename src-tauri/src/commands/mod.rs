@@ -7,6 +7,7 @@ pub mod projects;
 pub mod scan;
 pub mod settings;
 pub mod skill_card_translations;
+pub mod skill_kb;
 pub mod skills;
 pub mod sync;
 pub mod tools;

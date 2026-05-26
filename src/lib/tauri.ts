@@ -572,6 +572,51 @@ export const deleteSkillCardTranslations = (skillIds: string[], languageCode = "
     },
   });
 
+// ── Skill Assistant / Knowledge Base ──
+
+export interface SkillKbManifestSkillCount {
+  active: number;
+  deleted: number;
+}
+
+export interface SkillKbChangeSummary {
+  added: number;
+  updated: number;
+  deleted: number;
+  unchanged: number;
+}
+
+export interface SkillKbScanResult {
+  schemaVersion: string;
+  kbVersion: string;
+  generatedAt: string;
+  kbRoot: string;
+  manifestPath: string;
+  snapshotPath: string;
+  changesetPath: string;
+  skillCount: SkillKbManifestSkillCount;
+  summary: SkillKbChangeSummary;
+  errors: string[];
+}
+
+export interface SkillKbStatus {
+  exists: boolean;
+  kbRoot: string;
+  manifestPath: string;
+  generatedAt?: string | null;
+  kbVersion?: string | null;
+  skillCount: SkillKbManifestSkillCount;
+  latestSnapshotPath?: string | null;
+  latestChangesetPath?: string | null;
+  summary?: SkillKbChangeSummary | null;
+}
+
+export const scanSkillKb = () =>
+  invoke<SkillKbScanResult>("scan_skill_kb");
+
+export const getSkillKbStatus = () =>
+  invoke<SkillKbStatus>("get_skill_kb_status");
+
 export const getCentralRepoPath = () =>
   invoke<string>("get_central_repo_path");
 

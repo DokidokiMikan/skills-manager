@@ -8,6 +8,7 @@
     "globalWorkspace": "Global Workspace",
     "lobsterAgents": "Lobster Agents",
     "installSkills": "Install Skills",
+    "skillAssistant": "Skill Assistant",
     "presets": "Presets",
     "newPreset": "New Preset",
     "projects": "Project Workspaces",
@@ -73,6 +74,48 @@
       "navigate": "navigate",
       "open": "open",
       "toggle": "toggle"
+    }
+  },
+  "skillAssistant": {
+    "title": "Skill Assistant",
+    "subtitle": "Scan the central skill library and build the knowledge-base index.",
+    "actions": {
+      "scan": "Build Knowledge Base",
+      "refresh": "Refresh Knowledge Base",
+      "reveal": "Reveal"
+    },
+    "status": {
+      "label": "Status",
+      "loading": "Loading",
+      "ready": "Generated",
+      "missing": "Missing"
+    },
+    "stats": {
+      "activeSkills": "Active Skills",
+      "deletedSkills": "Deleted Records",
+      "lastScan": "Last Scan"
+    },
+    "sections": {
+      "knowledgeBase": "Knowledge Base Files"
+    },
+    "paths": {
+      "root": "Knowledge Base Root",
+      "manifest": "Manifest",
+      "snapshot": "Snapshot",
+      "changeset": "Changeset"
+    },
+    "changes": {
+      "added": "Added",
+      "updated": "Updated",
+      "deleted": "Deleted",
+      "unchanged": "Unchanged"
+    },
+    "common": {
+      "none": "None",
+      "noVersion": "No version yet"
+    },
+    "toasts": {
+      "scanComplete": "Skill knowledge base refreshed"
     }
   },
   "apiManagement": {

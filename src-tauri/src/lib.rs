@@ -981,6 +981,9 @@ pub fn run() {
             commands::skill_card_translations::list_skill_card_translations,
             commands::skill_card_translations::save_skill_card_translation,
             commands::skill_card_translations::delete_skill_card_translations,
+            // Skill Assistant / Knowledge Base
+            commands::skill_kb::scan_skill_kb,
+            commands::skill_kb::get_skill_kb_status,
             // Git Backup
             commands::git_backup::git_backup_fetch,
             commands::git_backup::git_backup_status,

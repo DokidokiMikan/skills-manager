@@ -18,6 +18,7 @@ pub mod repo_lock;
 pub mod scanner;
 pub mod scenario_service;
 pub mod skill_auto_updater;
+pub mod skill_kb;
 pub mod skill_metadata;
 pub mod skill_store;
 pub mod skillssh_api;

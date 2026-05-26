@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ChevronRight,
   KeyRound,
+  BrainCircuit,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -49,7 +50,7 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { presets, viewedPreset, setViewedPresetId, refreshPresets, refreshManagedSkills, projects, refreshProjects, tools, managedSkills } = useApp();
-  const getApiConnectionErrorMessage = (error: unknown) => {
+  const getApiConnectionErrorMessage = useCallback((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("Command list_api_profiles not found")) {
       return t("sidebar.apiStatus.apiManagementCommandMissing");
@@ -58,7 +59,7 @@ export function Sidebar() {
       return t("sidebar.apiStatus.connectionCommandMissing");
     }
     return message;
-  };
+  }, [t]);
   const [showCreate, setShowCreate] = useState(false);
   const [showAddProject, setShowAddProject] = useState(false);
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string; icon?: string | null } | null>(null);
@@ -131,7 +132,7 @@ export function Sidebar() {
     return () => {
       cancelled = true;
     };
-  }, [t]);
+  }, [t, getApiConnectionErrorMessage]);
   useEffect(() => {
     const handleApiStatusChanged = (event: Event) => {
       const customEvent = event as CustomEvent<{
@@ -232,6 +233,7 @@ export function Sidebar() {
     { name: t("sidebar.dashboard"), path: "/", icon: LayoutDashboard },
     { name: t("sidebar.mySkills"), path: "/my-skills", icon: Layers },
     { name: t("sidebar.installSkills"), path: "/install", icon: Download },
+    { name: t("sidebar.skillAssistant"), path: "/skill-assistant", icon: BrainCircuit },
   ];
 
   const handleSwitchPreset = (id: string) => {
