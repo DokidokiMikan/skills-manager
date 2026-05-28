@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,6 +19,11 @@ const SOURCE_SCOPE_CENTRAL: &str = "central";
 const MANIFEST_SCHEMA_VERSION: &str = "skill-kb-v1";
 const SNAPSHOT_SCHEMA_VERSION: &str = "skill-kb-source-snapshot-v1";
 const CHANGESET_SCHEMA_VERSION: &str = "skill-kb-changeset-v1";
+const ASSISTANT_PACKAGE_SCHEMA_VERSION: &str = "skill-assistant-package-manifest-v1";
+const ASSISTANT_PACKAGE_VERSION: &str = "0.1.0";
+const ASSISTANT_OUTPUT_DIR_NAME: &str = "generated-assistant-skill";
+const ASSISTANT_SOURCE_DIR_NAME: &str = "skill-assistant";
+const ASSISTANT_PREVIOUS_DIR_NAME: &str = "_previous";
 const SKILL_DOC_CANDIDATES: &[&str] = &["SKILL.md", "skill.md"];
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -49,6 +55,7 @@ pub struct SkillKbScanResult {
     pub skill_count: ManifestSkillCount,
     pub summary: SkillKbChangeSummary,
     pub errors: Vec<String>,
+    pub assistant_package: SkillAssistantPackageStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +70,147 @@ pub struct SkillKbStatus {
     pub latest_snapshot_path: Option<String>,
     pub latest_changeset_path: Option<String>,
     pub summary: Option<SkillKbChangeSummary>,
+    pub assistant_package: Option<SkillAssistantPackageStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillAssistantPackageStatus {
+    pub output_path: String,
+    pub path: String,
+    pub manifest_path: String,
+    pub version: String,
+    pub created: usize,
+    pub updated: usize,
+    pub unchanged: usize,
+    pub backed_up: usize,
+    pub manifest_status: String,
+    pub manifest_backed_up: bool,
+    pub files: Vec<ManagedGeneratedFileStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedGeneratedFileStatus {
+    pub path: String,
+    pub status: String,
+    pub hash: String,
+    pub previous_backed_up: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillAssistantPackageManifest {
+    schema_version: String,
+    version: String,
+    generated_at: String,
+    managed_by: String,
+    package_name: String,
+    enhancement_mode: String,
+    backup_policy: String,
+    previous_backup_dir: String,
+    source_kb_version: String,
+    active_skill_count: usize,
+    deleted_skill_count: usize,
+    files: Vec<ManagedGeneratedFileStatus>,
+}
+
+struct StaticGeneratedFile {
+    relative_path: &'static str,
+    content: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssistantDataManifest {
+    schema_version: String,
+    package_version: String,
+    generated_at: String,
+    source_kb_version: String,
+    enhancement_mode: String,
+    skill_count: ManifestSkillCount,
+    files: AssistantDataFiles,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssistantDataFiles {
+    basic_index: String,
+    cards_dir: String,
+    groups_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssistantBasicSkillIndex {
+    schema_version: String,
+    generated_at: String,
+    source_kb_version: String,
+    enhancement_mode: String,
+    skills: Vec<AssistantBasicSkillSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssistantBasicSkillSummary {
+    id: String,
+    name: String,
+    description: Option<String>,
+    status: String,
+    enabled: bool,
+    has_skill_md: bool,
+    card_path: String,
+    content_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssistantSkillCard {
+    schema_version: String,
+    id: String,
+    name: String,
+    description: Option<String>,
+    status: String,
+    enabled: bool,
+    has_skill_md: bool,
+    skill_md_file: Option<String>,
+    source_type: String,
+    source_ref: Option<String>,
+    content_hash: Option<String>,
+    enhancement_status: String,
+    summary: String,
+    best_for: Vec<String>,
+    not_for: Vec<String>,
+    trigger_signals: Vec<String>,
+    anti_triggers: Vec<String>,
+    capabilities: Vec<String>,
+    limitations: Vec<String>,
+    similar_skills: Vec<String>,
+    routing_notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssistantGroupIndex {
+    schema_version: String,
+    generated_at: String,
+    source_kb_version: String,
+    groups: Vec<AssistantGroup>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssistantGroup {
+    id: String,
+    label: String,
+    skill_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ManagedWriteStatus {
+    Created,
+    UpdatedWithBackup,
+    Unchanged,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +330,22 @@ fn changesets_dir() -> PathBuf {
     kb_root().join(CHANGESETS_DIR_NAME)
 }
 
+fn assistant_output_dir(root: &Path) -> PathBuf {
+    root.join(ASSISTANT_OUTPUT_DIR_NAME)
+}
+
+fn assistant_source_dir(root: &Path) -> PathBuf {
+    assistant_output_dir(root).join(ASSISTANT_SOURCE_DIR_NAME)
+}
+
+fn assistant_package_manifest_path(root: &Path) -> PathBuf {
+    assistant_output_dir(root).join(MANIFEST_FILE_NAME)
+}
+
+fn assistant_previous_dir(root: &Path) -> PathBuf {
+    assistant_output_dir(root).join(ASSISTANT_PREVIOUS_DIR_NAME)
+}
+
 fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -193,9 +357,421 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 }
 
 fn read_json_file<T: DeserializeOwned>(path: &Path) -> Result<T> {
-    let raw = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
+    let raw =
+        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
     serde_json::from_str(&raw).with_context(|| format!("Failed to parse {}", path.display()))
+}
+
+fn hash_text(content: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    format!("sha256:{}", hex::encode(hasher.finalize()))
+}
+
+fn managed_write_status_label(status: ManagedWriteStatus) -> &'static str {
+    match status {
+        ManagedWriteStatus::Created => "created",
+        ManagedWriteStatus::UpdatedWithBackup => "updated",
+        ManagedWriteStatus::Unchanged => "unchanged",
+    }
+}
+
+fn write_text_with_previous_backup(
+    path: &Path,
+    previous_path: &Path,
+    content: &str,
+) -> Result<ManagedWriteStatus> {
+    if !path.exists() {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create {}", parent.display()))?;
+        }
+        fs::write(path, content).with_context(|| format!("Failed to write {}", path.display()))?;
+        return Ok(ManagedWriteStatus::Created);
+    }
+
+    let current =
+        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
+    if current == content {
+        return Ok(ManagedWriteStatus::Unchanged);
+    }
+
+    if let Some(parent) = previous_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+    fs::write(previous_path, current)
+        .with_context(|| format!("Failed to write backup {}", previous_path.display()))?;
+    fs::write(path, content).with_context(|| format!("Failed to write {}", path.display()))?;
+
+    Ok(ManagedWriteStatus::UpdatedWithBackup)
+}
+
+fn assistant_static_files() -> Vec<StaticGeneratedFile> {
+    vec![
+        StaticGeneratedFile {
+            relative_path: "SKILL.md",
+            content: include_str!("skill_kb_templates/skill-assistant.SKILL.md"),
+        },
+        StaticGeneratedFile {
+            relative_path: "references/answering-principles.md",
+            content: include_str!("skill_kb_templates/answering-principles.md"),
+        },
+        StaticGeneratedFile {
+            relative_path: "references/update-guide.md",
+            content: include_str!("skill_kb_templates/update-guide.md"),
+        },
+        StaticGeneratedFile {
+            relative_path: "scripts/search_skills.py",
+            content: include_str!("skill_kb_templates/search_skills.py"),
+        },
+    ]
+}
+
+fn normalize_generated_path(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+fn sanitize_file_stem(value: &str) -> String {
+    let cleaned: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if cleaned.is_empty() {
+        "skill".to_string()
+    } else {
+        cleaned
+    }
+}
+
+fn write_generated_text_file(
+    source_dir: &Path,
+    previous_dir: &Path,
+    relative_path: &str,
+    content: &str,
+) -> Result<ManagedGeneratedFileStatus> {
+    let normalized_path = normalize_generated_path(relative_path);
+    let target = source_dir.join(&normalized_path);
+    let previous = previous_dir.join(&normalized_path);
+    let write_status = write_text_with_previous_backup(&target, &previous, content)
+        .with_context(|| format!("Failed to write generated assistant file {normalized_path}"))?;
+
+    Ok(ManagedGeneratedFileStatus {
+        path: normalized_path,
+        status: managed_write_status_label(write_status).to_string(),
+        hash: hash_text(content),
+        previous_backed_up: write_status == ManagedWriteStatus::UpdatedWithBackup,
+    })
+}
+
+fn write_generated_json_file<T: Serialize>(
+    source_dir: &Path,
+    previous_dir: &Path,
+    relative_path: &str,
+    value: &T,
+) -> Result<ManagedGeneratedFileStatus> {
+    let content = serde_json::to_string_pretty(value)?;
+    write_generated_text_file(source_dir, previous_dir, relative_path, &content)
+}
+
+fn count_file_status(files: &[ManagedGeneratedFileStatus]) -> (usize, usize, usize, usize) {
+    let created = files.iter().filter(|file| file.status == "created").count();
+    let updated = files.iter().filter(|file| file.status == "updated").count();
+    let unchanged = files.iter().filter(|file| file.status == "unchanged").count();
+    let backed_up = files.iter().filter(|file| file.previous_backed_up).count();
+    (created, updated, unchanged, backed_up)
+}
+
+fn card_path_for_skill(skill_id: &str) -> String {
+    format!("data/cards/{}.json", sanitize_file_stem(skill_id))
+}
+
+fn basic_summary_for_skill(skill: &SkillRecord) -> String {
+    skill.description
+        .as_ref()
+        .map(|description| description.trim())
+        .filter(|description| !description.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("Skill for tasks related to {}.", skill.name))
+}
+
+fn assistant_skill_card_from_skill(
+    skill: &SkillRecord,
+    entry: &ManifestSkillEntry,
+) -> AssistantSkillCard {
+    let summary = basic_summary_for_skill(skill);
+    AssistantSkillCard {
+        schema_version: "skill-assistant-card-v1".to_string(),
+        id: skill.id.clone(),
+        name: skill.name.clone(),
+        description: skill.description.clone(),
+        status: entry.status.clone(),
+        enabled: skill.enabled,
+        has_skill_md: entry.has_skill_md,
+        skill_md_file: entry.skill_md_file.clone(),
+        source_type: skill.source_type.clone(),
+        source_ref: skill.source_ref.clone(),
+        content_hash: skill.content_hash.clone(),
+        enhancement_status: "basic".to_string(),
+        summary: summary.clone(),
+        best_for: vec![summary],
+        not_for: Vec::new(),
+        trigger_signals: Vec::new(),
+        anti_triggers: Vec::new(),
+        capabilities: Vec::new(),
+        limitations: Vec::new(),
+        similar_skills: Vec::new(),
+        routing_notes: vec![
+            "This is a basic generated card. Use semantic enhancement before relying on fine-grained routing decisions.".to_string(),
+        ],
+    }
+}
+
+fn source_type_groups(
+    generated_at: &str,
+    kb_version: &str,
+    skills: &[SkillRecord],
+) -> AssistantGroupIndex {
+    let mut groups_by_source: HashMap<String, Vec<String>> = HashMap::new();
+    for skill in skills {
+        groups_by_source
+            .entry(skill.source_type.clone())
+            .or_default()
+            .push(skill.id.clone());
+    }
+
+    let mut groups: Vec<_> = groups_by_source
+        .into_iter()
+        .map(|(source_type, mut skill_ids)| {
+            skill_ids.sort();
+            AssistantGroup {
+                id: source_type.clone(),
+                label: source_type,
+                skill_ids,
+            }
+        })
+        .collect();
+    groups.sort_by(|a, b| a.id.cmp(&b.id));
+
+    AssistantGroupIndex {
+        schema_version: "skill-assistant-group-index-v1".to_string(),
+        generated_at: generated_at.to_string(),
+        source_kb_version: kb_version.to_string(),
+        groups,
+    }
+}
+
+fn status_groups(
+    generated_at: &str,
+    kb_version: &str,
+    entries: &[ManifestSkillEntry],
+) -> AssistantGroupIndex {
+    let mut groups_by_status: HashMap<String, Vec<String>> = HashMap::new();
+    for entry in entries {
+        groups_by_status
+            .entry(entry.status.clone())
+            .or_default()
+            .push(entry.id.clone());
+    }
+
+    let mut groups: Vec<_> = groups_by_status
+        .into_iter()
+        .map(|(status, mut skill_ids)| {
+            skill_ids.sort();
+            AssistantGroup {
+                id: status.clone(),
+                label: status,
+                skill_ids,
+            }
+        })
+        .collect();
+    groups.sort_by(|a, b| a.id.cmp(&b.id));
+
+    AssistantGroupIndex {
+        schema_version: "skill-assistant-group-index-v1".to_string(),
+        generated_at: generated_at.to_string(),
+        source_kb_version: kb_version.to_string(),
+        groups,
+    }
+}
+
+fn ensure_skill_assistant_package(
+    root: &Path,
+    generated_at: &str,
+    kb_version: &str,
+    skill_count: &ManifestSkillCount,
+    skills: &[SkillRecord],
+    manifest_entries: &[ManifestSkillEntry],
+) -> Result<SkillAssistantPackageStatus> {
+    let output_dir = assistant_output_dir(root);
+    let source_dir = assistant_source_dir(root);
+    let previous_dir = assistant_previous_dir(root);
+    fs::create_dir_all(&source_dir)
+        .with_context(|| format!("Failed to create {}", source_dir.display()))?;
+    fs::create_dir_all(&previous_dir)
+        .with_context(|| format!("Failed to create {}", previous_dir.display()))?;
+
+    let mut files = Vec::new();
+
+    for static_file in assistant_static_files() {
+        files.push(write_generated_text_file(
+            &source_dir,
+            &previous_dir,
+            static_file.relative_path,
+            static_file.content,
+        )?);
+    }
+
+    let data_manifest = AssistantDataManifest {
+        schema_version: "skill-assistant-data-manifest-v1".to_string(),
+        package_version: ASSISTANT_PACKAGE_VERSION.to_string(),
+        generated_at: generated_at.to_string(),
+        source_kb_version: kb_version.to_string(),
+        enhancement_mode: "basic".to_string(),
+        skill_count: skill_count.clone(),
+        files: AssistantDataFiles {
+            basic_index: "data/index/basic-skills.json".to_string(),
+            cards_dir: "data/cards/".to_string(),
+            groups_dir: "data/groups/".to_string(),
+        },
+    };
+    files.push(write_generated_json_file(
+        &source_dir,
+        &previous_dir,
+        "data/manifest.json",
+        &data_manifest,
+    )?);
+
+    let entry_by_id: HashMap<&str, &ManifestSkillEntry> = manifest_entries
+        .iter()
+        .map(|entry| (entry.id.as_str(), entry))
+        .collect();
+    let mut summaries = Vec::new();
+    let mut sorted_skills = skills.to_vec();
+    sorted_skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    for skill in &sorted_skills {
+        let Some(entry) = entry_by_id.get(skill.id.as_str()) else {
+            continue;
+        };
+        let card_path = card_path_for_skill(&skill.id);
+        let card = assistant_skill_card_from_skill(skill, entry);
+        files.push(write_generated_json_file(
+            &source_dir,
+            &previous_dir,
+            &card_path,
+            &card,
+        )?);
+
+        summaries.push(AssistantBasicSkillSummary {
+            id: skill.id.clone(),
+            name: skill.name.clone(),
+            description: skill.description.clone(),
+            status: entry.status.clone(),
+            enabled: skill.enabled,
+            has_skill_md: entry.has_skill_md,
+            card_path,
+            content_hash: skill.content_hash.clone(),
+        });
+    }
+
+    let basic_index = AssistantBasicSkillIndex {
+        schema_version: "skill-assistant-basic-index-v1".to_string(),
+        generated_at: generated_at.to_string(),
+        source_kb_version: kb_version.to_string(),
+        enhancement_mode: "basic".to_string(),
+        skills: summaries,
+    };
+    files.push(write_generated_json_file(
+        &source_dir,
+        &previous_dir,
+        "data/index/basic-skills.json",
+        &basic_index,
+    )?);
+
+    files.push(write_generated_json_file(
+        &source_dir,
+        &previous_dir,
+        "data/groups/source-types.json",
+        &source_type_groups(generated_at, kb_version, skills),
+    )?);
+    files.push(write_generated_json_file(
+        &source_dir,
+        &previous_dir,
+        "data/groups/status.json",
+        &status_groups(generated_at, kb_version, manifest_entries),
+    )?);
+
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    let package_manifest = SkillAssistantPackageManifest {
+        schema_version: ASSISTANT_PACKAGE_SCHEMA_VERSION.to_string(),
+        version: ASSISTANT_PACKAGE_VERSION.to_string(),
+        generated_at: generated_at.to_string(),
+        managed_by: "SkillManager".to_string(),
+        package_name: ASSISTANT_SOURCE_DIR_NAME.to_string(),
+        enhancement_mode: "basic".to_string(),
+        backup_policy: "keep_previous_version_only".to_string(),
+        previous_backup_dir: ASSISTANT_PREVIOUS_DIR_NAME.to_string(),
+        source_kb_version: kb_version.to_string(),
+        active_skill_count: skill_count.active,
+        deleted_skill_count: skill_count.deleted,
+        files: files.clone(),
+    };
+    let package_manifest_text = serde_json::to_string_pretty(&package_manifest)?;
+    let package_manifest_path = assistant_package_manifest_path(root);
+    let package_manifest_previous_path = previous_dir.join(MANIFEST_FILE_NAME);
+    let package_manifest_write_status = write_text_with_previous_backup(
+        &package_manifest_path,
+        &package_manifest_previous_path,
+        &package_manifest_text,
+    )
+    .context("Failed to write skill assistant package manifest")?;
+
+    let (created, updated, unchanged, backed_up) = count_file_status(&files);
+    Ok(SkillAssistantPackageStatus {
+        output_path: output_dir.to_string_lossy().to_string(),
+        path: source_dir.to_string_lossy().to_string(),
+        manifest_path: package_manifest_path.to_string_lossy().to_string(),
+        version: ASSISTANT_PACKAGE_VERSION.to_string(),
+        created,
+        updated,
+        unchanged,
+        backed_up,
+        manifest_status: managed_write_status_label(package_manifest_write_status).to_string(),
+        manifest_backed_up: package_manifest_write_status == ManagedWriteStatus::UpdatedWithBackup,
+        files,
+    })
+}
+
+fn get_skill_assistant_package_status(
+    root: &Path,
+) -> Result<Option<SkillAssistantPackageStatus>> {
+    let manifest_path = assistant_package_manifest_path(root);
+    if !manifest_path.is_file() {
+        return Ok(None);
+    }
+
+    let manifest = read_json_file::<SkillAssistantPackageManifest>(&manifest_path)?;
+    let unchanged = manifest.files.len();
+    Ok(Some(SkillAssistantPackageStatus {
+        output_path: assistant_output_dir(root).to_string_lossy().to_string(),
+        path: assistant_source_dir(root).to_string_lossy().to_string(),
+        manifest_path: manifest_path.to_string_lossy().to_string(),
+        version: manifest.version,
+        created: 0,
+        updated: 0,
+        unchanged,
+        backed_up: 0,
+        manifest_status: "present".to_string(),
+        manifest_backed_up: false,
+        files: manifest.files,
+    }))
 }
 
 fn skill_doc_file(path: &Path) -> Option<String> {
@@ -350,16 +926,17 @@ fn build_changeset(
                 .collect()
         })
         .unwrap_or_default();
-    let current_ids: HashSet<&str> = current_entries.iter().map(|entry| entry.id.as_str()).collect();
+    let current_ids: HashSet<&str> = current_entries
+        .iter()
+        .map(|entry| entry.id.as_str())
+        .collect();
 
     let mut changes = SkillKbChanges::default();
     for current in current_entries {
         match previous_by_id.get(current.id.as_str()) {
-            None => changes.added.push(change_item(
-                current,
-                None,
-                vec!["created".to_string()],
-            )),
+            None => changes
+                .added
+                .push(change_item(current, None, vec!["created".to_string()])),
             Some(previous) => {
                 let fields = changed_fields(previous, current);
                 if current.status == "deleted" && previous.status != "deleted" {
@@ -424,6 +1001,7 @@ pub fn scan_central_skill_kb(store: &SkillStore) -> Result<SkillKbScanResult> {
     let kb_version = format!("kb-{scan_id}");
     let snapshot_path = snapshots_dir().join(format!("source-{scan_id}.json"));
     let changeset_path = changesets_dir().join(format!("changeset-{scan_id}.json"));
+    let kb_root = kb_root();
     let manifest_path = manifest_path();
 
     fs::create_dir_all(snapshots_dir())?;
@@ -473,21 +1051,30 @@ pub fn scan_central_skill_kb(store: &SkillStore) -> Result<SkillKbScanResult> {
         skill_count: skill_count.clone(),
         latest_snapshot_path: Some(snapshot_path.to_string_lossy().to_string()),
         latest_changeset_path: Some(changeset_path.to_string_lossy().to_string()),
-        skills: manifest_entries,
+        skills: manifest_entries.clone(),
     };
     write_json_file(&manifest_path, &manifest)?;
+    let assistant_package = ensure_skill_assistant_package(
+        &kb_root,
+        &generated_at,
+        &kb_version,
+        &skill_count,
+        &skills,
+        &manifest_entries,
+    )?;
 
     Ok(SkillKbScanResult {
         schema_version: MANIFEST_SCHEMA_VERSION.to_string(),
         kb_version,
         generated_at,
-        kb_root: kb_root().to_string_lossy().to_string(),
+        kb_root: kb_root.to_string_lossy().to_string(),
         manifest_path: manifest_path.to_string_lossy().to_string(),
         snapshot_path: snapshot_path.to_string_lossy().to_string(),
         changeset_path: changeset_path.to_string_lossy().to_string(),
         skill_count,
         summary: changeset.summary,
         errors: Vec::new(),
+        assistant_package,
     })
 }
 
@@ -505,6 +1092,7 @@ pub fn get_skill_kb_status() -> Result<SkillKbStatus> {
             latest_snapshot_path: None,
             latest_changeset_path: None,
             summary: None,
+            assistant_package: None,
         });
     }
 
@@ -527,5 +1115,6 @@ pub fn get_skill_kb_status() -> Result<SkillKbStatus> {
         latest_snapshot_path: manifest.latest_snapshot_path,
         latest_changeset_path: manifest.latest_changeset_path,
         summary,
+        assistant_package: get_skill_assistant_package_status(&kb_root)?,
     })
 }

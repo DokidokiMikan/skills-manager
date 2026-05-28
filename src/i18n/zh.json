@@ -98,6 +98,37 @@
     "sections": {
       "knowledgeBase": "知识库文件"
     },
+    "guide": {
+      "title": "Skill 专家 V1 准备",
+      "description": "这一阶段先把中央 Skill 库整理成可追踪的本地知识库，并生成可编辑的 skill-assistant 源目录。",
+      "whatTitle": "它会生成什么",
+      "whatBody": "扫描会更新 manifest、snapshot、changeset，并生成 skill-assistant 的基础索引、分片卡片和参考说明。它不会改写普通 Skill，也暂不调用模型做语义增强。",
+      "orderTitle": "推荐顺序",
+      "order1": "先点击建立或刷新知识库。",
+      "order2": "查看变化统计，确认新增、更新、删除是否符合预期。",
+      "order3": "打开生成目录，检查 data/index、data/cards 和 references 是否符合预期。",
+      "scopeTitle": "当前范围",
+      "scopeBody": "当前只生成基础数据和可编辑 Skill 目录；zip 打包、语义增强和 Agent 模式会在后续步骤单独推进。"
+    },
+    "package": {
+      "title": "Skill 专家生成目录",
+      "ready": "skill-assistant {{version}} 已生成",
+      "missing": "刷新知识库后会生成 skill-assistant 目录",
+      "created": "新建",
+      "updated": "更新",
+      "unchanged": "未变化",
+      "backedUp": "已备份",
+      "output": "输出目录",
+      "source": "Skill 目录",
+      "manifest": "生成 Manifest",
+      "noFiles": "暂无生成文件。",
+      "statuses": {
+        "created": "新建",
+        "updated": "更新",
+        "unchanged": "未变化",
+        "present": "已存在"
+      }
+    },
     "paths": {
       "root": "知识库目录",
       "manifest": "Manifest",

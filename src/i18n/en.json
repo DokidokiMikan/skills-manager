@@ -98,6 +98,37 @@
     "sections": {
       "knowledgeBase": "Knowledge Base Files"
     },
+    "guide": {
+      "title": "Skill Expert V1 Prep",
+      "description": "This stage turns the central skill library into a traceable local knowledge base and generates an editable skill-assistant source directory.",
+      "whatTitle": "What It Generates",
+      "whatBody": "A scan updates the manifest, snapshot, changeset, and the skill-assistant basic index, sharded cards, and references. It does not rewrite normal skills or call a model for semantic enhancement yet.",
+      "orderTitle": "Recommended Order",
+      "order1": "Build or refresh the knowledge base first.",
+      "order2": "Review the change counts to confirm added, updated, and deleted skills.",
+      "order3": "Open the generated directory and check data/index, data/cards, and references.",
+      "scopeTitle": "Current Scope",
+      "scopeBody": "This step only generates basic data and the editable Skill directory. Zip export, semantic enhancement, and Agent mode will be handled separately later."
+    },
+    "package": {
+      "title": "Skill Expert Source",
+      "ready": "skill-assistant {{version}} generated",
+      "missing": "Refresh the knowledge base to generate the skill-assistant directory",
+      "created": "Created",
+      "updated": "Updated",
+      "unchanged": "Unchanged",
+      "backedUp": "Backed Up",
+      "output": "Output Folder",
+      "source": "Skill Folder",
+      "manifest": "Generated Manifest",
+      "noFiles": "No generated files yet.",
+      "statuses": {
+        "created": "Created",
+        "updated": "Updated",
+        "unchanged": "Unchanged",
+        "present": "Present"
+      }
+    },
     "paths": {
       "root": "Knowledge Base Root",
       "manifest": "Manifest",

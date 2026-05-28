@@ -586,6 +586,27 @@ export interface SkillKbChangeSummary {
   unchanged: number;
 }
 
+export interface ManagedGeneratedFileStatus {
+  path: string;
+  status: string;
+  hash: string;
+  previousBackedUp: boolean;
+}
+
+export interface SkillAssistantPackageStatus {
+  outputPath: string;
+  path: string;
+  manifestPath: string;
+  version: string;
+  created: number;
+  updated: number;
+  unchanged: number;
+  backedUp: number;
+  manifestStatus: string;
+  manifestBackedUp: boolean;
+  files: ManagedGeneratedFileStatus[];
+}
+
 export interface SkillKbScanResult {
   schemaVersion: string;
   kbVersion: string;
@@ -597,6 +618,7 @@ export interface SkillKbScanResult {
   skillCount: SkillKbManifestSkillCount;
   summary: SkillKbChangeSummary;
   errors: string[];
+  assistantPackage: SkillAssistantPackageStatus;
 }
 
 export interface SkillKbStatus {
@@ -609,6 +631,7 @@ export interface SkillKbStatus {
   latestSnapshotPath?: string | null;
   latestChangesetPath?: string | null;
   summary?: SkillKbChangeSummary | null;
+  assistantPackage?: SkillAssistantPackageStatus | null;
 }
 
 export const scanSkillKb = () =>

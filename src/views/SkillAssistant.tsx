@@ -2,10 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   AlertTriangle,
+  BookOpen,
   CheckCircle2,
   Database,
   FileJson,
+  FileText,
   FolderOpen,
+  ListChecks,
   Loader2,
   RefreshCcw,
 } from "lucide-react";
@@ -51,6 +54,27 @@ function SummaryTile({
   );
 }
 
+function StatusBadge({
+  label,
+  tone = "neutral",
+}: {
+  label: string;
+  tone?: "neutral" | "good" | "warn";
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center rounded-md border px-2 text-[12px] font-medium",
+        tone === "good" && "border-emerald-500/30 bg-emerald-500/[0.08] text-emerald-300",
+        tone === "warn" && "border-amber-500/30 bg-amber-500/[0.08] text-amber-300",
+        tone === "neutral" && "border-border-subtle bg-bg-secondary text-muted"
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
 function PathRow({
   icon: Icon,
   label,
@@ -93,6 +117,29 @@ function PathRow({
   );
 }
 
+function GeneratedFileRow({ file }: { file: api.ManagedGeneratedFileStatus }) {
+  const { t } = useTranslation();
+  const tone = file.status === "updated" || file.previousBackedUp ? "warn" : file.status === "created" ? "good" : "neutral";
+
+  return (
+    <div className="flex min-w-0 items-center gap-3 px-4 py-2.5">
+      <FileText className="h-4 w-4 shrink-0 text-muted" />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13px] font-medium text-secondary">{file.path}</div>
+        <div className="mt-0.5 truncate text-[12px] text-muted" title={file.hash}>
+          {file.hash}
+        </div>
+      </div>
+      <StatusBadge
+        tone={tone}
+        label={t(`skillAssistant.package.statuses.${file.status}`, {
+          defaultValue: file.status,
+        })}
+      />
+    </div>
+  );
+}
+
 export function SkillAssistant() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<api.SkillKbStatus | null>(null);
@@ -128,6 +175,7 @@ export function SkillAssistant() {
         latestSnapshotPath: result.snapshotPath,
         latestChangesetPath: result.changesetPath,
         summary: result.summary,
+        assistantPackage: result.assistantPackage,
       });
       toast.success(t("skillAssistant.toasts.scanComplete"));
     } catch (error) {
@@ -147,6 +195,7 @@ export function SkillAssistant() {
 
   const generatedAt = formatDate(status?.generatedAt);
   const summary = status?.summary;
+  const assistantPackage = status?.assistantPackage ?? null;
 
   return (
     <div className="app-page app-page-narrow">
@@ -198,6 +247,51 @@ export function SkillAssistant() {
         />
       </div>
 
+      <div className="app-panel p-4">
+        <div className="mb-4 flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-bg-secondary text-accent">
+            <BookOpen className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[14px] font-semibold text-primary">
+              {t("skillAssistant.guide.title")}
+            </div>
+            <div className="mt-1 text-[13px] text-muted">
+              {t("skillAssistant.guide.description")}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-md border border-border-subtle bg-bg-secondary p-3">
+            <div className="text-[13px] font-semibold text-primary">
+              {t("skillAssistant.guide.whatTitle")}
+            </div>
+            <p className="mt-1 text-[12px] leading-5 text-muted">
+              {t("skillAssistant.guide.whatBody")}
+            </p>
+          </div>
+          <div className="rounded-md border border-border-subtle bg-bg-secondary p-3">
+            <div className="text-[13px] font-semibold text-primary">
+              {t("skillAssistant.guide.orderTitle")}
+            </div>
+            <ol className="mt-1 space-y-1 pl-4 text-[12px] leading-5 text-muted">
+              <li>{t("skillAssistant.guide.order1")}</li>
+              <li>{t("skillAssistant.guide.order2")}</li>
+              <li>{t("skillAssistant.guide.order3")}</li>
+            </ol>
+          </div>
+          <div className="rounded-md border border-border-subtle bg-bg-secondary p-3">
+            <div className="text-[13px] font-semibold text-primary">
+              {t("skillAssistant.guide.scopeTitle")}
+            </div>
+            <p className="mt-1 text-[12px] leading-5 text-muted">
+              {t("skillAssistant.guide.scopeBody")}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="app-panel overflow-hidden">
         <div className="flex items-center gap-3 border-b border-border-subtle px-4 py-3">
           <Database className="h-4 w-4 text-accent" />
@@ -244,6 +338,82 @@ export function SkillAssistant() {
             disabled={!status?.exists}
             onReveal={revealPath}
           />
+        </div>
+      </div>
+
+      <div className="app-panel overflow-hidden">
+        <div className="flex items-center gap-3 border-b border-border-subtle px-4 py-3">
+          <ListChecks className="h-4 w-4 text-accent" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[14px] font-semibold text-primary">
+              {t("skillAssistant.package.title")}
+            </div>
+            <div className="mt-0.5 truncate text-[12px] text-muted">
+              {assistantPackage
+                ? t("skillAssistant.package.ready", { version: assistantPackage.version })
+                : t("skillAssistant.package.missing")}
+            </div>
+          </div>
+          {assistantPackage ? (
+            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+          ) : (
+            <AlertTriangle className="h-4 w-4 text-amber-400" />
+          )}
+        </div>
+
+        <div className="grid gap-3 border-b border-border-subtle p-4 md:grid-cols-4">
+          <SummaryTile
+            label={t("skillAssistant.package.created")}
+            value={assistantPackage?.created ?? 0}
+            tone={assistantPackage?.created ? "good" : "neutral"}
+          />
+          <SummaryTile
+            label={t("skillAssistant.package.updated")}
+            value={assistantPackage?.updated ?? 0}
+            tone={assistantPackage?.updated ? "warn" : "neutral"}
+          />
+          <SummaryTile
+            label={t("skillAssistant.package.unchanged")}
+            value={assistantPackage?.unchanged ?? 0}
+          />
+          <SummaryTile
+            label={t("skillAssistant.package.backedUp")}
+            value={assistantPackage?.backedUp ?? 0}
+            tone={assistantPackage?.backedUp ? "warn" : "neutral"}
+          />
+        </div>
+
+        <div className="divide-y divide-border-subtle">
+          <PathRow
+            icon={FolderOpen}
+            label={t("skillAssistant.package.output")}
+            path={assistantPackage?.outputPath}
+            disabled={!assistantPackage}
+            onReveal={revealPath}
+          />
+          <PathRow
+            icon={FolderOpen}
+            label={t("skillAssistant.package.source")}
+            path={assistantPackage?.path}
+            disabled={!assistantPackage}
+            onReveal={revealPath}
+          />
+          <PathRow
+            icon={FileJson}
+            label={t("skillAssistant.package.manifest")}
+            path={assistantPackage?.manifestPath}
+            disabled={!assistantPackage}
+            onReveal={revealPath}
+          />
+          {assistantPackage?.files.length ? (
+            assistantPackage.files.map((file) => (
+              <GeneratedFileRow key={file.path} file={file} />
+            ))
+          ) : (
+            <div className="px-4 py-3 text-[12px] text-muted">
+              {t("skillAssistant.package.noFiles")}
+            </div>
+          )}
         </div>
       </div>
 
