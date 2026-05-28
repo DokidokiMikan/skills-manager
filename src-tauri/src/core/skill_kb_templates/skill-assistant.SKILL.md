@@ -3,7 +3,7 @@ name: skill-assistant
 description: Consult the local Skills Manager skill library and recommend suitable skills for a user task.
 ---
 
-# Skill Expert
+# Skill Assistant
 
 Use this skill when the user asks which local skill to use, how two skills differ,
 or why a skill should or should not be selected for a task.

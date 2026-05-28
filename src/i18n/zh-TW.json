@@ -99,7 +99,7 @@
       "knowledgeBase": "知識庫檔案"
     },
     "guide": {
-      "title": "Skill 專家 V1 準備",
+      "title": "Skill 助手 V1",
       "description": "這一階段先把中央 Skill 庫整理成可追蹤的本地知識庫，並生成可編輯的 skill-assistant 來源目錄。",
       "whatTitle": "它會生成什麼",
       "whatBody": "掃描會更新 manifest、snapshot、changeset，並生成 skill-assistant 的基礎索引、分片卡片和參考說明。它不會改寫普通 Skill，也暫不呼叫模型做語義增強。",
@@ -111,7 +111,7 @@
       "scopeBody": "目前只生成基礎資料和可編輯 Skill 目錄；zip 打包、語義增強和 Agent 模式會在後續步驟單獨推進。"
     },
     "package": {
-      "title": "Skill 專家生成目錄",
+      "title": "Skill 助手生成目錄",
       "ready": "skill-assistant {{version}} 已生成",
       "missing": "重新整理知識庫後會生成 skill-assistant 目錄",
       "created": "新建",

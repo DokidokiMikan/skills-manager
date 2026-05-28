@@ -99,7 +99,7 @@
       "knowledgeBase": "知识库文件"
     },
     "guide": {
-      "title": "Skill 专家 V1 准备",
+      "title": "Skill 助手 V1",
       "description": "这一阶段先把中央 Skill 库整理成可追踪的本地知识库，并生成可编辑的 skill-assistant 源目录。",
       "whatTitle": "它会生成什么",
       "whatBody": "扫描会更新 manifest、snapshot、changeset，并生成 skill-assistant 的基础索引、分片卡片和参考说明。它不会改写普通 Skill，也暂不调用模型做语义增强。",
@@ -111,7 +111,7 @@
       "scopeBody": "当前只生成基础数据和可编辑 Skill 目录；zip 打包、语义增强和 Agent 模式会在后续步骤单独推进。"
     },
     "package": {
-      "title": "Skill 专家生成目录",
+      "title": "Skill 助手生成目录",
       "ready": "skill-assistant {{version}} 已生成",
       "missing": "刷新知识库后会生成 skill-assistant 目录",
       "created": "新建",
