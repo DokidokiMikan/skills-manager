@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   AlertTriangle,
+  Archive,
   BookOpen,
   CheckCircle2,
   Database,
@@ -395,6 +396,13 @@ export function SkillAssistant() {
             icon={FolderOpen}
             label={t("skillAssistant.package.source")}
             path={assistantPackage?.path}
+            disabled={!assistantPackage}
+            onReveal={revealPath}
+          />
+          <PathRow
+            icon={Archive}
+            label={t("skillAssistant.package.zip")}
+            path={assistantPackage?.zipPath}
             disabled={!assistantPackage}
             onReveal={revealPath}
           />

@@ -4,7 +4,9 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 use crate::core::{
     central_repo,
@@ -78,12 +80,15 @@ pub struct SkillKbStatus {
 pub struct SkillAssistantPackageStatus {
     pub output_path: String,
     pub path: String,
+    pub zip_path: String,
     pub manifest_path: String,
     pub version: String,
     pub created: usize,
     pub updated: usize,
     pub unchanged: usize,
     pub backed_up: usize,
+    pub zip_status: String,
+    pub zip_hash: String,
     pub manifest_status: String,
     pub manifest_backed_up: bool,
     pub files: Vec<ManagedGeneratedFileStatus>,
@@ -338,6 +343,10 @@ fn assistant_source_dir(root: &Path) -> PathBuf {
     assistant_output_dir(root).join(ASSISTANT_SOURCE_DIR_NAME)
 }
 
+fn assistant_zip_path(root: &Path) -> PathBuf {
+    assistant_output_dir(root).join(format!("{ASSISTANT_SOURCE_DIR_NAME}.zip"))
+}
+
 fn assistant_package_manifest_path(root: &Path) -> PathBuf {
     assistant_output_dir(root).join(MANIFEST_FILE_NAME)
 }
@@ -368,6 +377,12 @@ fn hash_text(content: &str) -> String {
     format!("sha256:{}", hex::encode(hasher.finalize()))
 }
 
+fn hash_bytes(content: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(content);
+    format!("sha256:{}", hex::encode(hasher.finalize()))
+}
+
 fn managed_write_status_label(status: ManagedWriteStatus) -> &'static str {
     match status {
         ManagedWriteStatus::Created => "created",
@@ -392,6 +407,36 @@ fn write_text_with_previous_backup(
 
     let current =
         fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
+    if current == content {
+        return Ok(ManagedWriteStatus::Unchanged);
+    }
+
+    if let Some(parent) = previous_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+    fs::write(previous_path, current)
+        .with_context(|| format!("Failed to write backup {}", previous_path.display()))?;
+    fs::write(path, content).with_context(|| format!("Failed to write {}", path.display()))?;
+
+    Ok(ManagedWriteStatus::UpdatedWithBackup)
+}
+
+fn write_bytes_with_previous_backup(
+    path: &Path,
+    previous_path: &Path,
+    content: &[u8],
+) -> Result<ManagedWriteStatus> {
+    if !path.exists() {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create {}", parent.display()))?;
+        }
+        fs::write(path, content).with_context(|| format!("Failed to write {}", path.display()))?;
+        return Ok(ManagedWriteStatus::Created);
+    }
+
+    let current = fs::read(path).with_context(|| format!("Failed to read {}", path.display()))?;
     if current == content {
         return Ok(ManagedWriteStatus::Unchanged);
     }
@@ -486,6 +531,64 @@ fn count_file_status(files: &[ManagedGeneratedFileStatus]) -> (usize, usize, usi
     let unchanged = files.iter().filter(|file| file.status == "unchanged").count();
     let backed_up = files.iter().filter(|file| file.previous_backed_up).count();
     (created, updated, unchanged, backed_up)
+}
+
+fn write_skill_assistant_zip(
+    root: &Path,
+    previous_dir: &Path,
+) -> Result<(ManagedWriteStatus, String)> {
+    let output_dir = assistant_output_dir(root);
+    let source_dir = assistant_source_dir(root);
+    let zip_path = assistant_zip_path(root);
+    let temp_zip_path = output_dir.join(format!("{ASSISTANT_SOURCE_DIR_NAME}.zip.tmp"));
+
+    let mut paths: Vec<PathBuf> = WalkDir::new(&source_dir)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.into_path())
+        .collect();
+    paths.sort();
+
+    let file = fs::File::create(&temp_zip_path)
+        .with_context(|| format!("Failed to create {}", temp_zip_path.display()))?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts: zip::write::FileOptions<()> = zip::write::FileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+
+    for path in paths {
+        let entry_name = path
+            .strip_prefix(&output_dir)
+            .with_context(|| format!("Failed to relativize {}", path.display()))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        zip.start_file(entry_name, opts)
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let mut source_file =
+            fs::File::open(&path).with_context(|| format!("Failed to open {}", path.display()))?;
+        let mut buffer = Vec::new();
+        source_file
+            .read_to_end(&mut buffer)
+            .with_context(|| format!("Failed to read {}", path.display()))?;
+        zip.write_all(&buffer)
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    }
+
+    zip.finish()
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+
+    let zip_bytes = fs::read(&temp_zip_path)
+        .with_context(|| format!("Failed to read {}", temp_zip_path.display()))?;
+    let zip_hash = hash_bytes(&zip_bytes);
+    let status = write_bytes_with_previous_backup(
+        &zip_path,
+        &previous_dir.join(format!("{ASSISTANT_SOURCE_DIR_NAME}.zip")),
+        &zip_bytes,
+    )?;
+    let _ = fs::remove_file(&temp_zip_path);
+
+    Ok((status, zip_hash))
 }
 
 fn card_path_for_skill(skill_id: &str) -> String {
@@ -732,17 +835,21 @@ fn ensure_skill_assistant_package(
         &package_manifest_text,
     )
     .context("Failed to write skill assistant package manifest")?;
+    let (zip_status, zip_hash) = write_skill_assistant_zip(root, &previous_dir)?;
 
     let (created, updated, unchanged, backed_up) = count_file_status(&files);
     Ok(SkillAssistantPackageStatus {
         output_path: output_dir.to_string_lossy().to_string(),
         path: source_dir.to_string_lossy().to_string(),
+        zip_path: assistant_zip_path(root).to_string_lossy().to_string(),
         manifest_path: package_manifest_path.to_string_lossy().to_string(),
         version: ASSISTANT_PACKAGE_VERSION.to_string(),
         created,
         updated,
         unchanged,
         backed_up,
+        zip_status: managed_write_status_label(zip_status).to_string(),
+        zip_hash,
         manifest_status: managed_write_status_label(package_manifest_write_status).to_string(),
         manifest_backed_up: package_manifest_write_status == ManagedWriteStatus::UpdatedWithBackup,
         files,
@@ -762,12 +869,17 @@ fn get_skill_assistant_package_status(
     Ok(Some(SkillAssistantPackageStatus {
         output_path: assistant_output_dir(root).to_string_lossy().to_string(),
         path: assistant_source_dir(root).to_string_lossy().to_string(),
+        zip_path: assistant_zip_path(root).to_string_lossy().to_string(),
         manifest_path: manifest_path.to_string_lossy().to_string(),
         version: manifest.version,
         created: 0,
         updated: 0,
         unchanged,
         backed_up: 0,
+        zip_status: "present".to_string(),
+        zip_hash: fs::read(assistant_zip_path(root))
+            .map(|bytes| hash_bytes(&bytes))
+            .unwrap_or_default(),
         manifest_status: "present".to_string(),
         manifest_backed_up: false,
         files: manifest.files,

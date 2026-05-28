@@ -120,6 +120,7 @@
       "backedUp": "Backed Up",
       "output": "Output Folder",
       "source": "Skill Folder",
+      "zip": "Zip Package",
       "manifest": "Generated Manifest",
       "noFiles": "No generated files yet.",
       "statuses": {

@@ -120,6 +120,7 @@
       "backedUp": "已备份",
       "output": "输出目录",
       "source": "Skill 目录",
+      "zip": "Zip 包",
       "manifest": "生成 Manifest",
       "noFiles": "暂无生成文件。",
       "statuses": {

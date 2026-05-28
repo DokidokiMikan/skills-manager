@@ -596,12 +596,15 @@ export interface ManagedGeneratedFileStatus {
 export interface SkillAssistantPackageStatus {
   outputPath: string;
   path: string;
+  zipPath: string;
   manifestPath: string;
   version: string;
   created: number;
   updated: number;
   unchanged: number;
   backedUp: number;
+  zipStatus: string;
+  zipHash: string;
   manifestStatus: string;
   manifestBackedUp: boolean;
   files: ManagedGeneratedFileStatus[];
