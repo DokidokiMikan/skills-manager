@@ -130,6 +130,13 @@
         "present": "已存在"
       }
     },
+    "enhancement": {
+      "pending": "待增強",
+      "enhanced": "已增強",
+      "unavailable": "不可增強",
+      "total": "增強總數",
+      "plan": "增強清單"
+    },
     "paths": {
       "root": "知識庫目錄",
       "manifest": "Manifest",

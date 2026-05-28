@@ -598,16 +598,25 @@ export interface SkillAssistantPackageStatus {
   path: string;
   zipPath: string;
   manifestPath: string;
+  enhancementPlanPath: string;
   version: string;
   created: number;
   updated: number;
   unchanged: number;
   backedUp: number;
+  enhancement: SkillAssistantEnhancementSummary;
   zipStatus: string;
   zipHash: string;
   manifestStatus: string;
   manifestBackedUp: boolean;
   files: ManagedGeneratedFileStatus[];
+}
+
+export interface SkillAssistantEnhancementSummary {
+  total: number;
+  pending: number;
+  enhanced: number;
+  unavailable: number;
 }
 
 export interface SkillKbScanResult {

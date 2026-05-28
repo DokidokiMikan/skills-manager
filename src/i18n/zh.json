@@ -130,6 +130,13 @@
         "present": "已存在"
       }
     },
+    "enhancement": {
+      "pending": "待增强",
+      "enhanced": "已增强",
+      "unavailable": "不可增强",
+      "total": "增强总数",
+      "plan": "增强清单"
+    },
     "paths": {
       "root": "知识库目录",
       "manifest": "Manifest",

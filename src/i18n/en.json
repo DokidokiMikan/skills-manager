@@ -130,6 +130,13 @@
         "present": "Present"
       }
     },
+    "enhancement": {
+      "pending": "Pending Enhancement",
+      "enhanced": "Enhanced",
+      "unavailable": "Unavailable",
+      "total": "Enhancement Total",
+      "plan": "Enhancement Plan"
+    },
     "paths": {
       "root": "Knowledge Base Root",
       "manifest": "Manifest",

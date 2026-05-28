@@ -16,9 +16,10 @@ package version, generation time, and the current data layout.
 Use these files in order:
 
 1. `data/index/basic-skills.json` for fast candidate discovery.
-2. `data/cards/*.json` for per-skill details.
-3. `data/groups/*.json` for broad comparisons.
-4. `references/*.md` for answer policy and update rules.
+2. `data/enhancement-plan.json` to see which cards still need semantic enhancement.
+3. `data/cards/*.json` for per-skill details.
+4. `data/groups/*.json` for broad comparisons.
+5. `references/*.md` for answer policy and update rules.
 
 ## Answering Policy
 

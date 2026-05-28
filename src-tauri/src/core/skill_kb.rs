@@ -82,11 +82,13 @@ pub struct SkillAssistantPackageStatus {
     pub path: String,
     pub zip_path: String,
     pub manifest_path: String,
+    pub enhancement_plan_path: String,
     pub version: String,
     pub created: usize,
     pub updated: usize,
     pub unchanged: usize,
     pub backed_up: usize,
+    pub enhancement: SkillAssistantEnhancementSummary,
     pub zip_status: String,
     pub zip_hash: String,
     pub manifest_status: String,
@@ -101,6 +103,15 @@ pub struct ManagedGeneratedFileStatus {
     pub status: String,
     pub hash: String,
     pub previous_backed_up: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillAssistantEnhancementSummary {
+    pub total: usize,
+    pub pending: usize,
+    pub enhanced: usize,
+    pub unavailable: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,6 +152,7 @@ struct AssistantDataManifest {
 #[serde(rename_all = "camelCase")]
 struct AssistantDataFiles {
     basic_index: String,
+    enhancement_plan: String,
     cards_dir: String,
     groups_dir: String,
 }
@@ -166,6 +178,28 @@ struct AssistantBasicSkillSummary {
     has_skill_md: bool,
     card_path: String,
     content_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssistantEnhancementPlan {
+    schema_version: String,
+    generated_at: String,
+    source_kb_version: String,
+    enhancement_mode: String,
+    summary: SkillAssistantEnhancementSummary,
+    tasks: Vec<AssistantEnhancementTask>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssistantEnhancementTask {
+    skill_id: String,
+    name: String,
+    card_path: String,
+    content_hash: Option<String>,
+    status: String,
+    reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -349,6 +383,12 @@ fn assistant_zip_path(root: &Path) -> PathBuf {
 
 fn assistant_package_manifest_path(root: &Path) -> PathBuf {
     assistant_output_dir(root).join(MANIFEST_FILE_NAME)
+}
+
+fn assistant_enhancement_plan_path(root: &Path) -> PathBuf {
+    assistant_source_dir(root)
+        .join("data")
+        .join("enhancement-plan.json")
 }
 
 fn assistant_previous_dir(root: &Path) -> PathBuf {
@@ -595,6 +635,48 @@ fn card_path_for_skill(skill_id: &str) -> String {
     format!("data/cards/{}.json", sanitize_file_stem(skill_id))
 }
 
+fn enhancement_task_for_skill(
+    skill: &SkillRecord,
+    entry: &ManifestSkillEntry,
+    card_path: &str,
+) -> AssistantEnhancementTask {
+    let (status, reason) = if entry.status == "deleted" {
+        ("unavailable", "Skill is marked as deleted.")
+    } else if !entry.has_skill_md {
+        ("unavailable", "Skill has no SKILL.md file to analyze.")
+    } else {
+        ("pending", "Basic card is ready for optional semantic enhancement.")
+    };
+
+    AssistantEnhancementTask {
+        skill_id: skill.id.clone(),
+        name: skill.name.clone(),
+        card_path: card_path.to_string(),
+        content_hash: skill.content_hash.clone(),
+        status: status.to_string(),
+        reason: reason.to_string(),
+    }
+}
+
+fn enhancement_summary(tasks: &[AssistantEnhancementTask]) -> SkillAssistantEnhancementSummary {
+    SkillAssistantEnhancementSummary {
+        total: tasks.len(),
+        pending: tasks.iter().filter(|task| task.status == "pending").count(),
+        enhanced: tasks.iter().filter(|task| task.status == "enhanced").count(),
+        unavailable: tasks
+            .iter()
+            .filter(|task| task.status == "unavailable")
+            .count(),
+    }
+}
+
+fn read_enhancement_summary(root: &Path) -> SkillAssistantEnhancementSummary {
+    let path = assistant_enhancement_plan_path(root);
+    read_json_file::<AssistantEnhancementPlan>(&path)
+        .map(|plan| plan.summary)
+        .unwrap_or_default()
+}
+
 fn basic_summary_for_skill(skill: &SkillRecord) -> String {
     skill.description
         .as_ref()
@@ -740,6 +822,7 @@ fn ensure_skill_assistant_package(
         skill_count: skill_count.clone(),
         files: AssistantDataFiles {
             basic_index: "data/index/basic-skills.json".to_string(),
+            enhancement_plan: "data/enhancement-plan.json".to_string(),
             cards_dir: "data/cards/".to_string(),
             groups_dir: "data/groups/".to_string(),
         },
@@ -756,6 +839,7 @@ fn ensure_skill_assistant_package(
         .map(|entry| (entry.id.as_str(), entry))
         .collect();
     let mut summaries = Vec::new();
+    let mut enhancement_tasks = Vec::new();
     let mut sorted_skills = skills.to_vec();
     sorted_skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
@@ -771,6 +855,7 @@ fn ensure_skill_assistant_package(
             &card_path,
             &card,
         )?);
+        enhancement_tasks.push(enhancement_task_for_skill(skill, entry, &card_path));
 
         summaries.push(AssistantBasicSkillSummary {
             id: skill.id.clone(),
@@ -796,6 +881,22 @@ fn ensure_skill_assistant_package(
         &previous_dir,
         "data/index/basic-skills.json",
         &basic_index,
+    )?);
+
+    let enhancement_summary = enhancement_summary(&enhancement_tasks);
+    let enhancement_plan = AssistantEnhancementPlan {
+        schema_version: "skill-assistant-enhancement-plan-v1".to_string(),
+        generated_at: generated_at.to_string(),
+        source_kb_version: kb_version.to_string(),
+        enhancement_mode: "basic".to_string(),
+        summary: enhancement_summary.clone(),
+        tasks: enhancement_tasks,
+    };
+    files.push(write_generated_json_file(
+        &source_dir,
+        &previous_dir,
+        "data/enhancement-plan.json",
+        &enhancement_plan,
     )?);
 
     files.push(write_generated_json_file(
@@ -843,11 +944,15 @@ fn ensure_skill_assistant_package(
         path: source_dir.to_string_lossy().to_string(),
         zip_path: assistant_zip_path(root).to_string_lossy().to_string(),
         manifest_path: package_manifest_path.to_string_lossy().to_string(),
+        enhancement_plan_path: assistant_enhancement_plan_path(root)
+            .to_string_lossy()
+            .to_string(),
         version: ASSISTANT_PACKAGE_VERSION.to_string(),
         created,
         updated,
         unchanged,
         backed_up,
+        enhancement: enhancement_summary,
         zip_status: managed_write_status_label(zip_status).to_string(),
         zip_hash,
         manifest_status: managed_write_status_label(package_manifest_write_status).to_string(),
@@ -871,11 +976,15 @@ fn get_skill_assistant_package_status(
         path: assistant_source_dir(root).to_string_lossy().to_string(),
         zip_path: assistant_zip_path(root).to_string_lossy().to_string(),
         manifest_path: manifest_path.to_string_lossy().to_string(),
+        enhancement_plan_path: assistant_enhancement_plan_path(root)
+            .to_string_lossy()
+            .to_string(),
         version: manifest.version,
         created: 0,
         updated: 0,
         unchanged,
         backed_up: 0,
+        enhancement: read_enhancement_summary(root),
         zip_status: "present".to_string(),
         zip_hash: fs::read(assistant_zip_path(root))
             .map(|bytes| hash_bytes(&bytes))

@@ -384,6 +384,28 @@ export function SkillAssistant() {
           />
         </div>
 
+        <div className="grid gap-3 border-b border-border-subtle p-4 md:grid-cols-4">
+          <SummaryTile
+            label={t("skillAssistant.enhancement.pending")}
+            value={assistantPackage?.enhancement.pending ?? 0}
+            tone={assistantPackage?.enhancement.pending ? "warn" : "neutral"}
+          />
+          <SummaryTile
+            label={t("skillAssistant.enhancement.enhanced")}
+            value={assistantPackage?.enhancement.enhanced ?? 0}
+            tone={assistantPackage?.enhancement.enhanced ? "good" : "neutral"}
+          />
+          <SummaryTile
+            label={t("skillAssistant.enhancement.unavailable")}
+            value={assistantPackage?.enhancement.unavailable ?? 0}
+            tone={assistantPackage?.enhancement.unavailable ? "bad" : "neutral"}
+          />
+          <SummaryTile
+            label={t("skillAssistant.enhancement.total")}
+            value={assistantPackage?.enhancement.total ?? 0}
+          />
+        </div>
+
         <div className="divide-y divide-border-subtle">
           <PathRow
             icon={FolderOpen}
@@ -410,6 +432,13 @@ export function SkillAssistant() {
             icon={FileJson}
             label={t("skillAssistant.package.manifest")}
             path={assistantPackage?.manifestPath}
+            disabled={!assistantPackage}
+            onReveal={revealPath}
+          />
+          <PathRow
+            icon={FileJson}
+            label={t("skillAssistant.enhancement.plan")}
+            path={assistantPackage?.enhancementPlanPath}
             disabled={!assistantPackage}
             onReveal={revealPath}
           />
